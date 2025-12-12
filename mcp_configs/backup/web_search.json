@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "type": "streamable_http",
+      "url": "https://mcp.api-inference.modelscope.net/c7683c2d77f348/mcp",
+      "headers": {
+        "Authorization": "Bearer ms-d6110ad6-e59a-4513-8f80-7743b921118a"
+      }
+    }
+  }
+}

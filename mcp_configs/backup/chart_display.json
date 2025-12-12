@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-server-chart": {
+      "type": "streamable_http",
+      "url": "https://mcp.api-inference.modelscope.net/a55e03a9e9a941/mcp"
+    }
+  }
+}

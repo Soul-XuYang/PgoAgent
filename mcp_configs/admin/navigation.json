@@ -1,0 +1,6 @@
+{
+    "amap-maps-streamableHTTP": {
+        "transport": "streamable_http",
+        "url": "https://mcp.amap.com/mcp?key=0270ba7fa32241c95ff5446901b99f6b"
+    }
+}

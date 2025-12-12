@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pdf-reader-mcp": {
+      "type": "streamable_http",
+      "url": "https://mcp.api-inference.modelscope.net/f3afd1239a4942/mcp"
+    }
+  }
+}

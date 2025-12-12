@@ -1,0 +1,12 @@
+# 参考的学习资料-未来一般是LangChain+LangGraph这两个框架
+Agent-with-RAG-and-Long-Term-Memory/
+VideoCode/
+
+# 忽略的虚拟环境
+.vscode/
+*.env
+*.venv/
+
+# 忽略的本地模型
+cross-encoder-model/
+text2vec-base-chinese/

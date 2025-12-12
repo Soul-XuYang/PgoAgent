@@ -1,0 +1,9 @@
+{
+    "zhipu-web-search": {
+        "transport": "streamable_http",
+        "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+        "headers": {
+            "Authorization": "Bearer yourapikey"
+        }
+    }
+}
