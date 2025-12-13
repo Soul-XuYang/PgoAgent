@@ -7,9 +7,9 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph, add_messages
 from langgraph.store.postgres import  AsyncPostgresStore
 from pydantic import BaseModel
-from config import PRINT_SWITCH,DATABASE_URL
+from agent.config import PRINT_SWITCH,DATABASE_URL
 from agent.state_utils import get_latest_HumanMessage, has_obvious_profile_info
-from my_llm import  llm
+from agent.my_llm import llm
 from utils import extract_token_usage
 
 key = "profile"  # 你可以改名，比如 "user_memory"

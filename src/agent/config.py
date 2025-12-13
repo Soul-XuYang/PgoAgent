@@ -5,7 +5,7 @@ load_dotenv()  # 加载环境变量
 API_KEY= os.getenv("OPENAI_API_KEY")  # 从环境变量中获取OPENAI_API_KEY的值
 BASE_URL = os.getenv("OPENAI_BASE_URL")  # 从环境变量中获取OPENAI_BASE_URL的值
 DATABASE_URL = os.getenv("DATABASE_URL")
-PRINT_SWITCH = True # DEBUG各个节点的token数
+PRINT_SWITCH = False # DEBUG各个节点的token数
 
 # 基本模型的输入token设置
 MODEL_MAX_INPUT = {

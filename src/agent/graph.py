@@ -2,8 +2,9 @@ import asyncio
 import selectors
 import json
 import uuid
-from typing import Any, Annotated, List, TypedDict, NotRequired, Dict
-from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage
+from platform import system
+from typing import Any, Annotated, List, TypedDict, NotRequired
+from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -14,6 +15,8 @@ from langgraph.types import interrupt
 from langgraph_runtime_inmem.store import Store
 from langmem.short_term import SummarizationNode
 from pydantic import BaseModel, Field
+
+from agent.subAgents.decisionAgent import decision_graph
 from config import PRINT_SWITCH,MODEL_MAX_INPUT, DATABASE_URL
 from agent.tools import *
 from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里提供 get_mcp_tools
@@ -32,12 +35,12 @@ input_limit = MODEL_MAX_INPUT.get(model_name, 8192)
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     usages: Annotated[dict[str, int], accumulate_usage]
-    context: NotRequired[dict[str, Any]] # 上下文，这里更多和对话相连-注重于chat功能
+    context: NotRequired[dict[str]] # 上下文，这里更多和对话相连-注重于chat功能
     requires_agent: NotRequired[bool]
     requires_rag: NotRequired[bool]
     # 工具-设置
     plan_steps: NotRequired[List[str]]
-    plan_step_tools: NotRequired[List[Dict[str, Any]]]
+    plan_step_tools: NotRequired[List[str]]
     origin_plan_steps:NotRequired[List[str]]
     # 防止无限循环
     agent_loop_count: NotRequired[int]
@@ -45,10 +48,10 @@ class State(TypedDict):
 
 # 不断总结以及裁剪信息
 async def summarization_node(
-    state: State,
-    max_tokens: int = 4096,
-    max_summary_tokens: int = 1024,
-    topK: int = 6,
+        state: State,
+        max_tokens: int = 4096,
+        max_summary_tokens: int = 1024,
+        topK: int = 6,
 ) -> State:
     # 初始化
     state["requires_agent"] = False
@@ -66,13 +69,19 @@ async def summarization_node(
         output_messages_key="messages",
     )
 
+    # ★ 确保 context 存在并保存用户最新提问
+    ctx = state.setdefault("context", {})
+    msgs = state.get("messages", [])
+    # 从后向前查找最新的用户提问
+    for msg in reversed(msgs):
+        if isinstance(msg, HumanMessage):
+            ctx["current_user_question"] = msg.content
+            break
     total_tokens = count_tokens_approximately(state["messages"])
     if total_tokens <= max_tokens or len(state["messages"]) < 10:
         return state
-    # ★ 确保 context 存在
-    state.setdefault("context", {})
 
-    new_state =  await base_node.ainvoke(state) # 注意这里还是
+    new_state = await base_node.ainvoke(state)  # 注意这里还是
     summary_msg = new_state["messages"][0]
 
     state["context"]["summary"] = summary_msg.content
@@ -84,11 +93,13 @@ async def summarization_node(
 class ToolNode:
     """
     处理大模型返回的 tool_calls-优先调用本地工具。
-    - 支持黑名单拦截（直接告知被禁用）
-    - 默认使用 BaseTool 的 a-invoke 来兼容同步/异步工具
+    - 支持黑名单拦截（仅拦截被禁用工具，其余正常执行）
+    - 工具输出自动截断（防止token爆炸）
+    - 不再修改计划状态（由agent_node统一管理）
     """
     def __init__(self, tools: list[BaseTool]):         # 将工具列表转换为 {name: tool} 的映射-注册
         self._tool_map = {tool.name: tool for tool in tools}
+        self._max_output_chars = input_limit /2 * 4 # 保证单个工具的最大token数
 
     async def __call__(self, state: State) -> State:
         approved = {}
@@ -96,49 +107,59 @@ class ToolNode:
             raise ValueError("状态中没有上下文的消息内容")
         latest = msgs[-1] # 注意这里取的是最新的消息
         tool_infos = latest.tool_calls
-        banned_tool = []
-        plan_steps = state.get("plan_steps", [])
-        plan_step_tools = state.get("plan_step_tools", [])
-        for tool_info in tool_infos: # 遍历AI的请求工具信息，包括id
+        # 分离合法和黑名单工具
+        banned_tools = []
+        allowed_tools = []
+        for tool_info in tool_infos:
             if tool_info["name"] in BLACK_LIST:
-                banned_tool.append(tool_info) # 返回tool的各种信息
-        if banned_tool:
+                banned_tools.append(tool_info)
+            else:
+                allowed_tools.append(tool_info)
+        # 如果有黑名单工具，请求人工审核
+        if banned_tools:
             approved = interrupt(
                 "当前会话涉及敏感工具："
-                f"{', '.join(t['name'] for t in banned_tool)}。\n"
+                f"{', '.join(t['name'] for t in banned_tools)}。\n"
                 "请你审核并选择:批准(y)或者拒绝(n)，可以给出对应理由"
             )
-        if isinstance(approved, dict) and "answer" in approved:
-            answer = approved["answer"].lower()
-            reason = approved["answer"]
-            if reason.startswith('no'):
-                reason = reason[2:].strip()
-            elif reason.startswith('n'):
-                reason = reason[1:].strip()
-            # 拒绝工具的分支
-            if answer.startswith('n'):
-                banned_msg = []
-                for t in banned_tool:
-                    banned_msg.append(ToolMessage(
-                        content=f"用户拒绝执行工具 {t['name']}, 理由是{reason}",  # 使用单个工具名
-                        tool_call_id=t["id"]  # 使用对应的工具ID
-                    ))
-                # 注意是上述for循环确认后再删减步骤，因为一个步骤对应一个操作节点
-                updated_steps = plan_steps[1:] if plan_steps else []
-                updated_tools = plan_step_tools[1:] if plan_step_tools else []
-                return {
-                    "messages": msgs + banned_msg,
-                    "usages": {}, # 工具本身的调用不消耗token
-                    "plan_steps": updated_steps,
-                    "plan_step_tools": updated_tools
-                }
-        # 执行工具调用，用户默认使用对应数据
-        tool_messages = await self._execute_tool_calls(tool_infos)
+            # 处理审核结果
+            if isinstance(approved, dict) and "answer" in approved:
+                # 这两个遍历都是放在answer里的
+                answer = approved["answer"].lower()
+                reason = approved.get("answer", "")
+                if reason.startswith('no'):
+                    reason = reason[2:].strip()
+                elif reason.startswith('n'):
+                    reason = reason[1:].strip()
+                # 拒绝：为黑名单工具生成拒绝消息
+                if answer.startswith('n'):
+                    tool_messages = []
+                    for t in banned_tools:
+                        tool_messages.append(ToolMessage(
+                            content=f"⚠️ 工具 {t['name']} 被拒绝执行，理由：{reason if reason else '涉及敏感操作'}",
+                            tool_call_id=t["id"],
+                            name=t["name"]
+                        ))
+
+                    # 执行合法工具
+                    if allowed_tools:
+                        executed_messages = await self._execute_tool_calls(allowed_tools)
+                        tool_messages.extend(executed_messages)
+
+                    return {
+                        "messages": tool_messages,
+                        "usages": {},
+                    }
+                else:
+                    # 批准：黑名单工具加入允许列表
+                    allowed_tools.extend(banned_tools)
+
+        # 执行所有允许的工具（包括批准后的黑名单工具）
+        tool_messages = await self._execute_tool_calls(allowed_tools)
         return {
-            "messages": msgs + tool_messages,  # 补充：将工具消息追加到原消息后，而非覆盖
+            "messages": tool_messages,
             "usages": {},
         }
-
     async def _execute_tool_calls(self,tool_calls: list[dict]) -> List[ToolMessage]:
 
         async def _invoke_tool( tool_call: dict) -> ToolMessage:
@@ -155,111 +176,81 @@ class ToolNode:
                         tool.invoke,
                         tool_call["args"],
                     )
+                result_str = json.dumps(tool_result, ensure_ascii=False) # 对输出结果进行预处理
+                if len(result_str) > self._max_output_chars:
+                    truncated = result_str[:self._max_output_chars]
+                    result_str = (
+                        f"{truncated}\n\n"
+                        f"⚠️ [输出已截断，原始长度 {len(result_str)} 字符，"
+                        f"已保留前 {self._max_output_chars} 字符]"
+                    )
                 return ToolMessage(
-                    content=json.dumps(tool_result, ensure_ascii=False),  # 将工具返回的结果转换为字符串
+                    content=result_str,  # 将工具返回的结果转换为字符串
                     name=tool_call["name"],
                     tool_call_id=tool_call["id"])
             except Exception as error:
-                raise RuntimeError(f"调用工具 {tool_call['name']} 失败") from error
-
+                return ToolMessage(
+                    content=f"❌ 工具执行失败: {str(error)}",
+                    name=tool_call.get("name", "unknown"),
+                    tool_call_id=tool_call["id"]
+                )
         try:
             return await asyncio.gather(*[_invoke_tool(tool_call) for tool_call in tool_calls])
         except Exception as e:
             raise RuntimeError(f"并发执行调用工具失败: {e}") from e
 
-def build_tool_keywords(tools): # 自动生成工具提示词
-    keywords = {}
-    for tool in tools:
-        name = tool.name.lower()
-        # 自动生成关键词（基础启发式）
-        kw = [name]
-        if "time" in name:
-            kw += ["时间", "几点","日期","time"]
-        if "file" in name:
-            kw += ["文件", "目录", "路径","file","path"]
-        if "search" in name:
-            kw += ["搜索", "查找", "search"]
-        if "pdf" in name:
-            kw += ["pdf", "文档"]
-        if "image" in name:
-            kw += ["图片", "图像"]
 
-        keywords[name] = list(set(kw))  # 去重
-    return keywords
-
-DECISION_SYSTEM_PROMPT = """你是一个只负责“是否需要调用工具”的路由器。
-请严格按照下面规则设置 requires_agent：
-
-- 在用户明确提出：查询时间/日期、搜索互联网/知识库、读取/操作文件、访问外部系统或数据库、需要最新数据、使用RAG获取知识库内容时，才把 requires_agent 设为 true。
-- 如果用户提出需要使用MCP工具时,把 requires_agent 设为 true。
-- 其它情况一律将 requires_agent 设为 false。
-- 如果不确定，默认 requires_agent = false。
-"""
-
-# 决策几点
-class DecisionOutput(BaseModel):
-    requires_agent: bool = Field(
-        description="是否需要调用外部工具（如时间 / 搜索 / 文件 / 知识库等）。"
-            "只有在用户明确提出需要查询外部信息、访问文件、数据库等时，才设为 true。"
-            "不确定或者其它情况设置为 false。"
-    )
-
-async def decision_node(state: State) -> State:
-    # 获取信息
-    msgs = state["messages"]
-    latest = msgs[-1]
-    user_input = latest.content if hasattr(latest, "content") else str(latest)
-    decision_llm = llm.with_structured_output(DecisionOutput, include_raw=True)
-    inputs=    [
-            SystemMessage(content=DECISION_SYSTEM_PROMPT),
-            HumanMessage(content=user_input),
-        ]
-    response = await decision_llm.ainvoke(inputs)  # 分析其数据
-    parsed_data = response["parsed"]
-    raw_message = response["raw"]
-    usage_delta = extract_token_usage(raw_message)
-
-    if PRINT_SWITCH:
-        print("决策器输出：", parsed_data.requires_agent)
-        print(f"[decision_node] Token增量: {usage_delta}")
-    return {
-            "messages": [],
-            "usages": usage_delta,
-            "requires_agent": parsed_data.requires_agent
-    }
-async def answer_thinking_node(state: State)->State:
+async def answer_thinking_node(state: State) -> State:
     msgs = state.get("messages", [])
     origin_plan_steps = state.get("origin_plan_steps", [])
-    length = len(origin_plan_steps)
-    fallback_question = None
-    for msg in reversed(msgs[:-length] if length else msgs):
+    ctx = state.get("context", {})
+    fallback_question = ctx.get("current_user_question", "用户问题缺失")
+
+    # 收集所有 ToolMessage（工具执行结果）
+    tool_results = []
+    ai_messages = []
+
+    # 从后往前查找，收集本次任务周期内的所有消息
+    for msg in reversed(msgs):
         if isinstance(msg, HumanMessage):
-            fallback_question = msg
-            break
-    # 如果没找到HumanMessage，使用兜底
-    if not fallback_question:
-        fallback_question = HumanMessage(content="用户问题缺失")
-    step_responses: list[BaseMessage] = msgs[-length:] if length else msgs    # 获取规划结果并且按照时间顺序来的
+            # 遇到用户问题就停止（说明到达本次任务的起点）
+            if msg.content == fallback_question:
+                break
+        elif isinstance(msg, ToolMessage):
+            tool_results.insert(0, msg)  # 保持顺序
+        elif isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+            ai_messages.insert(0, msg)
+
+    # 构建执行记录描述
+    execution_log = "执行步骤的详细记录：\n"
+    if tool_results:
+        for i, tool_msg in enumerate(tool_results, 1):
+            execution_log += f"\n步骤 {i}：工具 {tool_msg.name}\n"
+            execution_log += f"返回结果：{tool_msg.content}\n"
+    else:
+        execution_log += "\n⚠️ 警告：未找到工具执行结果！\n"
+
     question = (
-        f"用户提问:{fallback_question.content},解决用户问题的步骤{origin_plan_steps}\n"
-        f"步骤回应:{step_responses}\n"
-        "  请根据上述工具返回的数据, 详细、准确地回答用户的问题。"
-        "要求:"
-        "- 确保答案完整、准确地满足用户需求。"
+        f"用户提问: {fallback_question}\n"
+        f"解决用户问题的计划步骤: {origin_plan_steps}\n\n"
+        f"{execution_log}\n"
+        "请根据上述工具返回的实际数据，详细、准确地回答用户的问题。\n"
+        "要求:\n"
+        "- 提取工具返回的真实数据（JSON 格式的文件列表、路径信息等）\n"
+        "- 不要编造任何数据\n"
+        "- 如果工具返回了具体的文件名和目录，请完整列出"
     )
     msgs_for_summary = [SystemMessage(content=question)]
     # 强制裁剪到安全范围
-    print(f"=====*** 原内容信息:{msgs_for_summary} ***=====")
     trimmed = trim_messages(
         msgs_for_summary,
         strategy="last",
         token_counter=count_tokens_approximately,
-        max_tokens=input_limit, # 最大的输入限制
+        max_tokens=input_limit,  # 最大的输入限制
         start_on="system",
         end_on="system",
     )
     msgs_for_summary = trimmed
-    print(f"=====*** 后续内容修剪内容的信息:{msgs_for_summary} ***=====")
     response = await llm.ainvoke(msgs_for_summary)
     usage_delta = extract_token_usage(response)  # 获取此次对话的token使用清空
     if PRINT_SWITCH:
@@ -283,22 +274,61 @@ async def create_graph(store:Store,config: RunnableConfig):
         current_step = plan_steps[0] if plan_steps else "直接处理用户请求"
         # 根据 capability 筛选相关工具
         relevant_tool_names = CAPABILITY_TO_TOOLS.get(current_capability, [])
+
         if relevant_tool_names:
             # 根据工具名称从 all_tools 中筛选出实际的工具对象
             relevant_tools = [t for t in LOCAL_TOOLS if t.name in relevant_tool_names]
         else:
-            relevant_tools = []   # none 或者未知 capability，不绑定工具
-        if "external_mcp" in current_capability and mcp_tools :
+            relevant_tools = []  # none 或者未知 capability，不绑定工具
+        if "external_mcp" in current_capability and mcp_tools:
             relevant_tools.extend(mcp_tools)
+
         # 创建系统提示
-        system_content = f"当前任务步骤: {current_step}\n"
+        ctx = state.get("context", {})
+        user_question = ctx.get("current_user_question", "")
+
+        system_content = f"用户问题: {user_question}\n"
+        system_content += f"当前任务步骤: {current_step}\n"
         if relevant_tools:
             system_content += f"可用工具: {', '.join([t.name for t in relevant_tools])}\n"
             system_content += "\n请使用上述工具完成当前步骤。"
         else:
             system_content += "\n无需使用工具，请直接回答。"
-        # 构建消息历史,包含用户原始问题和对话历史
-        msgs_for_llm = [SystemMessage(content=system_content)] # 最终的输入
+
+        # 构建消息历史 - 保持消息对象的结构-langgraph的格式需求-上下文使用
+        msgs_for_llm = [SystemMessage(content=system_content)]
+        if len(msgs) >= 2:
+            # 从后往前查找最近的 AIMessage 和 ToolMessage 配对
+            temp_history = []
+            i = len(msgs) - 1
+            collected_pairs = 0
+            max_pairs = 3  # 最多保留 3 对历史
+            while i >= 0 and collected_pairs < max_pairs:
+                msg = msgs[i]
+                # 找到 AIMessage with tool_calls
+                if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    # 收集这个 AIMessage 的所有 tool_call_ids
+                    tool_call_ids = {tc['id'] for tc in msg.tool_calls}
+                    tool_messages = []
+
+                    # 向后查找对应的 ToolMessage
+                    for j in range(i + 1, len(msgs)):
+                        if isinstance(msgs[j], ToolMessage):
+                            if msgs[j].tool_call_id in tool_call_ids:
+                                tool_messages.append(msgs[j])
+                                tool_call_ids.discard(msgs[j].tool_call_id)
+                        elif isinstance(msgs[j], AIMessage):
+                            # 遇到下一个 AIMessage 停止
+                            break
+
+                    # 只有当所有 tool_calls 都有响应时才添加
+                    if len(tool_call_ids) == 0:
+                        temp_history.insert(0, msg)
+                        temp_history[1:1] = tool_messages  # 在 AIMessage 后插入 ToolMessages
+                        collected_pairs += 1
+                i -= 1
+            # 添加到消息列表
+            msgs_for_llm.extend(temp_history)
         total_tokens = count_tokens_approximately(msgs_for_llm)
         # 对每次工具的执行进行裁剪
         if total_tokens > input_limit:
@@ -327,7 +357,7 @@ async def create_graph(store:Store,config: RunnableConfig):
         next_steps = plan_steps[1:]  # 该 step 已经“落地成文本结果”，消耗它
         next_tools = plan_step_tools[1:]
         return {
-            "messages": msgs + [response],
+            "messages":[response],
             "usages": usage_delta,
             "plan_steps": next_steps,
             "plan_step_tools": next_tools,
@@ -394,7 +424,7 @@ async def create_graph(store:Store,config: RunnableConfig):
             response.id = str(uuid.uuid4())
 
         return {
-            "messages": msgs + [response],  # 把模型回答追加到原始消息后
+            "messages": [response],  # 把模型回答追加到原始消息后
             "usages": usage_delta,
         }
     #========正式开始构建图========
@@ -402,6 +432,7 @@ async def create_graph(store:Store,config: RunnableConfig):
     memory_node = memory_graph(store)
     builder = StateGraph(State)
     planner_node = planner_graph()
+    decision_node = decision_graph()
     builder.add_node("summarization_node", summarization_node)
     builder.add_node("decision_node", decision_node)
     builder.add_node("planner_node", planner_node)
@@ -439,8 +470,9 @@ async def create_graph(store:Store,config: RunnableConfig):
 def agent_choice(state: State):
     plan_steps = state.get("plan_steps", [])
     plan_step_tools = state.get("plan_step_tools", [])
-    # 获取循环计数器并立即增加
+    # 获取循环计数器
     loop_count = state.get("agent_loop_count", 0)
+
     # 安全保护：如果循环超过10次，强制结束
     if loop_count >= 10:
         if PRINT_SWITCH:
@@ -448,17 +480,20 @@ def agent_choice(state: State):
             print(f"[错误] 剩余步骤: {plan_steps}")
             print(f"[错误] 剩余工具: {plan_step_tools}")
         return "think-answer"
-    # 先判断计划是否已完成，如果完成则进入长期记忆节点
+
+    # 先检查是否有工具调用，再检查计划完成
+    msgs = state["messages"]
+    latest_msg = msgs[-1] # 最新的消息有没有工具调用
+    tool_calls = getattr(latest_msg, "tool_calls", []) or []
+
+    # 有工具调用 → 必须先执行工具
+    if tool_calls:
+        return "use_tools"
+
+    # 一定是先判断工具调用，再判断计划完成
     if not plan_steps or not plan_step_tools:
         return "think-answer"
 
-    # 计划未完成，检查是否有工具调用
-    msgs = state["messages"]
-    latest_msg = msgs[-1]
-    tool_calls = getattr(latest_msg, "tool_calls", []) or []
-    # 有工具调用 → 直接进入工具节点执行工具
-    if tool_calls:
-        return "use_tools"
     return "self-think"
 
 def decision_choice(state: State):
@@ -498,7 +533,7 @@ if __name__ == "__main__":
 
             # 3. 测试数据
             init_state = {
-                "messages": [HumanMessage(content="你好，请列出当前的目录，并告诉我当前路径下outline.md文件里的内容是啥呢?")],
+                "messages": [HumanMessage(content="你好，请列出当前的目录有哪些文件呢注意目录和文件名都要列出来?")],
                 "context": {},
             }
             # 4. 执行Graph
@@ -510,7 +545,7 @@ if __name__ == "__main__":
             test_state = {
             "messages": [
                 HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
-                                     "四川大学望江校区的路线是什么并且预计我坐地铁和步行的方式到达川大的时间是本地时间的几点几分呢？")
+                                     "四川大学望江校区的路线(坐地铁和步行)？并且预计我的方式到达川大的时间是本地时间的几点几分呢？")
                 ]
             }
             result = await agent.ainvoke(test_state, config=config)
