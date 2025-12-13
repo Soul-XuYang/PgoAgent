@@ -7,6 +7,3 @@ VideoCode/
 *.env
 *.venv/
 
-# 忽略的本地模型
-cross-encoder-model/
-text2vec-base-chinese/
