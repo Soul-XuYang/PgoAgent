@@ -2,8 +2,7 @@ import asyncio
 import selectors
 import json
 import uuid
-from platform import system
-from typing import Any, Annotated, List, TypedDict, NotRequired
+from typing import Annotated, List, TypedDict, NotRequired
 from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.runnables import RunnableConfig

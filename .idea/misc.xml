@@ -4,4 +4,10 @@
     <option name="sdkName" value="Python 3.12 (LangChain_Learning)" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (PgoAgent)" project-jdk-type="Python SDK" />
+  <component name="PyPackaging">
+    <option name="earlyReleasesAsUpgrades" value="true" />
+  </component>
+  <component name="PythonCompatibilityInspectionAdvertiser">
+    <option name="version" value="3" />
+  </component>
 </project>

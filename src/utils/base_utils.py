@@ -23,24 +23,6 @@ def estimate_tools_tokens(tools):
     return count_tokens_approximately([SystemMessage(content=text)])
 
 
-def run_time(func):
-    async def async_wrapper(*args, **kwargs):
-        start = time.time()
-        result = await func(*args, **kwargs)
-        end = time.time()
-        print(f"{func.__name__} run time: {format_time(end - start)}")
-        return result
-
-    def sync_wrapper(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        print(f"{func.__name__} run time: {format_time(end - start)}")
-        return result
-    if asyncio.iscoroutinefunction(func):
-        return async_wrapper
-    else:
-        return sync_wrapper
 
 def extract_token_usage(msg) -> Dict[str, int]:
     """获取每个消息的token数据"""

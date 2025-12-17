@@ -3,7 +3,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langgraph.constants import START, END
 from langgraph.graph import add_messages, StateGraph
 from pydantic import BaseModel, Field
-from agent.config import PRINT_SWITCH
+from config.basic_config import PRINT_SWITCH
 from agent.my_llm import llm
 from utils import extract_token_usage
 

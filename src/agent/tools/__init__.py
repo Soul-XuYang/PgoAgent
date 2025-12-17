@@ -1,6 +1,6 @@
 # tools 软件包
 __version__ = "0.0.1"
-__author__ = "xuyang"
+__author__ = "xu yang"
 
 import importlib
 import inspect
