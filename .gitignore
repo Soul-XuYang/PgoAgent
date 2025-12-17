@@ -7,3 +7,10 @@ VideoCode/
 *.env
 *.venv/
 
+*.word
+*.pdf
+*.csv
+*.egg-info/
+comments/
+
+*.log

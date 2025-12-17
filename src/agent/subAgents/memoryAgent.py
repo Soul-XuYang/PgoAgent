@@ -1,5 +1,5 @@
 import re
-from typing import Tuple, List, Annotated, NotRequired, Any, TypedDict, Dict, Optional
+from typing import Tuple, List, Annotated, NotRequired, Any, TypedDict
 from pydantic import Field
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -7,7 +7,7 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph, add_messages
 from langgraph.store.postgres import  AsyncPostgresStore
 from pydantic import BaseModel
-from agent.config import PRINT_SWITCH,DATABASE_URL
+from config.basic_config import PRINT_SWITCH,DATABASE_URL
 from agent.state_utils import get_latest_HumanMessage, has_obvious_profile_info
 from agent.my_llm import llm
 from utils import extract_token_usage

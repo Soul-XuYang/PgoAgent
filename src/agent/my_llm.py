@@ -1,9 +1,8 @@
 from langchain_openai import ChatOpenAI
 from config import API_KEY, BASE_URL
 from typing import Tuple, List
-from zai import ZhipuAiClient
-from chat_models import ChatAI
-
+from PgoModel import ChatAI
+# 只要继承ChatOpenAI 就可以使用，这里对它进行了改造
 llm = ChatAI(
     model="moonshot-v1-8k",  # 改为 model 而不是 model_name
     temperature=0.3,
@@ -12,7 +11,7 @@ llm = ChatAI(
     deep_thinking=False,
     timeout = 300
 )
-web_search_client = ZhipuAiClient(api_key="your-api-key")
+
 def stream_output(model: ChatAI, prompt: str, print_choice: bool = True) -> Tuple[str, List[str]]:
     full_response = []
     token_usage = {}  # 初始化 token_usage 字典
