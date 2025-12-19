@@ -1,0 +1,7 @@
+2025-12-19 20:53:48.910 | ERROR    | PgoModel.rerank_model:rerank_documents:81 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/rerank (尝试 1/3)
+2025-12-19 20:53:49.683 | ERROR    | PgoModel.rerank_model:rerank_documents:81 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/rerank (尝试 2/3)
+2025-12-19 20:53:50.434 | ERROR    | PgoModel.rerank_model:rerank_documents:81 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/rerank (尝试 3/3)
+2025-12-19 20:55:08.291 | ERROR    | PgoModel.embedding_model:_embed:119 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/embeddings (尝试 1/3)
+2025-12-19 20:55:11.460 | ERROR    | PgoModel.embedding_model:_embed:119 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/embeddings (尝试 2/3)
+2025-12-19 20:56:05.031 | ERROR    | PgoModel.embedding_model:_embed:119 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/embeddings (尝试 1/3)
+2025-12-19 20:56:07.964 | ERROR    | PgoModel.embedding_model:_embed:119 - 请求失败: 503 Server Error: Service Unavailable for url: https://api.siliconflow.cn/v1/embeddings (尝试 2/3)

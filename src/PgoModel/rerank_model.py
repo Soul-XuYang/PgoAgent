@@ -2,17 +2,35 @@ import asyncio
 
 import aiohttp
 import requests
-from typing import List, Dict
+from typing import List, Dict, TypedDict, NotRequired
 from loguru import logger
 
+class RerankRequest(TypedDict):
+    model: str
+    query: str
+    documents: List[str]
+    instruction: str
+    top_n: int
+    return_documents: bool
+    max_chunks_per_doc: int
+    overlap_tokens: int
 
+class RerankResult(TypedDict):
+    index: int
+    relevance_score: float
+    document: str  # 当 return_documents=True 时存在
+
+class RerankResponse(TypedDict):
+    results: List[RerankResult]
+    usage: NotRequired[dict]  # token 使用信息
+    model: str
 
 class RerankModel: 
     """同步版 Rerank 模型类 
     - 仅支持Jina AI 重排序模型
     - 这里的token不是标准类型的，建议从rerank_documents获取token值
     """
-    def __init__(self,model_name:str = "OpenAI", api_url: str = "https://api.openai.com/v1/rerank", api_key: str = None,timeout: int = 30, max_retries: int = 3):
+    def __init__(self,model_name:str = "BAAI/bge-reranker-v2-m3", api_url: str = "https://api.openai.com/v1/rerank", api_key: str = None,timeout: int = 30, max_retries: int = 3):
         if not api_key:
             raise ValueError("请提供API密钥")
         self.api_url = api_url
@@ -38,7 +56,7 @@ class RerankModel:
         :param overlap_tokens: 重叠的tokens数
         :return: 排序后的文档及其相关度分数
         """
-        data = {
+        data: RerankRequest = {
             "model": self.model_name,
             "query": query,
             "documents": documents,
@@ -53,7 +71,7 @@ class RerankModel:
             try:
                 response = requests.post(self.api_url, headers=self.headers, json=data, timeout=self.timeout)
                 response.raise_for_status()  # 如果返回的状态码是4xx或5xx，会抛出异常
-                result = response.json()
+                result: RerankResponse = response.json()
                 return result  # 返回 API 返回的完整结果和token信息
             except requests.exceptions.Timeout:
                 logger.warning(f"请求超时 (尝试 {attempt + 1}/{self.max_retries})")
@@ -68,7 +86,7 @@ class RerankModel:
 class RerankModelAsync:
     """异步版 Rerank 模型类"""
 
-    def __init__(self, model_name:str = "OpenAI",api_url: str = "https://api.siliconflow.cn/v1/rerank", api_key: str = None, timeout: int = 30,
+    def __init__(self, model_name:str = "BAAI/bge-reranker-v2-m3",api_url: str = "https://api.siliconflow.cn/v1/rerank", api_key: str = None, timeout: int = 30,
                  max_retries: int = 3):
         if not api_key:
             raise ValueError("请提供API密钥")
@@ -96,8 +114,8 @@ class RerankModelAsync:
         :param overlap_tokens: 重叠的tokens数
         :return: 排序后的文档及其相关度分数和token信息
         """
-        data = {
-            "model": "BAAI/bge-reranker-v2-m3",
+        data: RerankRequest = {
+            "model": self.model_name,
             "query": query,
             "documents": documents,
             "instruction": instruction,
@@ -113,7 +131,7 @@ class RerankModelAsync:
                     async with session.post(self.api_url, headers=self.headers, json=data,
                                             timeout=self.timeout) as response:
                         response.raise_for_status()  # 如果返回的状态码是4xx或5xx，会抛出异常
-                        result = await response.json()
+                        result: RerankResponse = await response.json()
                         return result  # 返回 API 返回的完整结果和token信息
             except asyncio.TimeoutError:
                 logger.warning(f"请求超时 (尝试 {attempt + 1}/{self.max_retries})")
@@ -130,9 +148,9 @@ async def test_rerank_model_async():
 
 
     query = "Apple"
-    documents = ["apple", "banana", "fruit", "vegetable"]
+    documents = ["apple", "banana", "fruit", "vegetable","toys"]
     instruction = "Please rerank the documents based on the query."
-    result = await reranker.rerank_documents(query, documents, instruction)
+    result = await reranker.rerank_documents(query, documents, instruction,top_k=3)
     print(result["results"])
     # 获取 token 使用情况
 

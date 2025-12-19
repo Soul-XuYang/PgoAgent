@@ -1,0 +1,31 @@
+# 数据库通用配置
+[common]
+charset = "utf8mb4"
+max_idle_conns = 10
+max_open_conns = 100
+conn_max_lifetime = 3600  # 秒
+
+# 开发环境数据库配置
+[dev]
+type ="postgresql"
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "123456"
+db_name = "postgres"
+# 继承通用配置（TOML本身不支持继承，可在代码中合并）
+
+# 生产环境数据库配置
+[prod]
+type ="postgresql"
+host = ""
+port = 1234
+user = ""
+password = ""
+db_name = ""
+
+[model.chat]
+
+[model.embedding]
+
+[model.rerank]

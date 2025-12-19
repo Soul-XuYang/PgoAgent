@@ -1,11 +1,19 @@
 import asyncio
+
+
 import aiohttp
 import requests
 import time
 import numpy as np
-from typing import List, Union
+from typing import List, Union, TypedDict
 from langchain.embeddings.base import Embeddings
 from config.logger_config import logger
+
+class EmbeddingRequest(TypedDict):
+    model: str
+    input: List[str]
+    encoding_format: str
+    dimensions: int
 
 class EmbeddingModel(Embeddings):
     """一个兼容LangChain Embeddings接口等硅基流动同步封装类
@@ -27,7 +35,7 @@ class EmbeddingModel(Embeddings):
         - 需要提供有效的API密钥
         - 建议根据实际需求调整batch_size和request_interval参数
     """
-    def __init__(self, model_name: str = "OpenAI", api_url: str = "https://api.openai.com/v1/embeddings", api_key: str = None, timeout: int = 30, max_retries: int = 3, encoding_format: str = "float",
+    def __init__(self, model_name: str = "BAAI/bge-large-zh-v1.5", api_url: str = "https://api.openai.com/v1/embeddings", api_key: str = None, timeout: int = 30, max_retries: int = 3, encoding_format: str = "float",
                 dimensions: int = 1024, batch_size: int = 128,request_interval: int = 1.0):
         self.model_name = model_name
         self.api_key = api_key
@@ -60,11 +68,12 @@ class EmbeddingModel(Embeddings):
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i + batch_size] # 每次请求的文本长度
             # 自动根据用用户的输入请求来构建
-            data = {"model": self.model_name,
-                    "input": batch_texts,
-                    "encoding_format": self.encoding_format,
-                    "dimensions": self.dimensions
-                    }
+            data: EmbeddingRequest = {
+                "model": self.model_name,
+                "input": batch_texts,
+                "encoding_format": self.encoding_format,
+                "dimensions": self.dimensions
+            }
             for attempt in range(self.max_retries):
                 try:
                     response = requests.post(self.api_url, json=data, headers=self.headers, timeout=self.timeout)
@@ -241,16 +250,12 @@ class EmbeddingModelAsync(Embeddings):
         async with aiohttp.ClientSession() as session:
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i + batch_size]
-                data = {
+                data: EmbeddingRequest = {
                     "model": self.model_name,
                     "input": batch_texts,
+                    "encoding_format": self.encoding_format,
+                    "dimensions": self.dimensions
                 }
-
-                if self.encoding_format:
-                    data["encoding_format"] = self.encoding_format
-                if self.dimensions:
-                    data["dimensions"] = self.dimensions
-
                 for attempt in range(self.max_retries):
                     result = await self._async_request(session, data, attempt)
                     if result:

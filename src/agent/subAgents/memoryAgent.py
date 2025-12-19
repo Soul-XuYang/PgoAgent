@@ -7,7 +7,7 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph, add_messages
 from langgraph.store.postgres import  AsyncPostgresStore
 from pydantic import BaseModel
-from config.basic_config import PRINT_SWITCH,DATABASE_URL
+from config import PRINT_SWITCH,DATABASE_DSN
 from agent.state_utils import get_latest_HumanMessage, has_obvious_profile_info
 from agent.my_llm import llm
 from utils import extract_token_usage
@@ -59,7 +59,7 @@ async def init_store() -> AsyncPostgresStore:
     """初始化存储"""
     try:
         # 直接使用 from_conn_string 创建实例
-        store = await AsyncPostgresStore.from_conn_string(DATABASE_URL)
+        store = await AsyncPostgresStore.from_conn_string(DATABASE_DSN)
         await store.setup()
         return store
     except Exception as e:
@@ -246,7 +246,7 @@ if __name__ == "__main__":
 
     async def _test():
         # 1. 用 async with 打开 store
-        async with AsyncPostgresStore.from_conn_string(DATABASE_URL) as store:
+        async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
             await store.setup()
 
             # 2. 构建记忆智能体图
@@ -277,7 +277,7 @@ if __name__ == "__main__":
 
 
     async def _print():
-        async with AsyncPostgresStore.from_conn_string(DATABASE_URL) as store:
+        async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
             await store.setup()
             await delete_user_memory(store, "teste_001")
             print("最新用户画像：")

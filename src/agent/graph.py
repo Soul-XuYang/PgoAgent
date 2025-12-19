@@ -15,7 +15,7 @@ from langgraph_runtime_inmem.store import Store
 from langmem.short_term import SummarizationNode
 
 from agent.subAgents.decisionAgent import decision_graph
-from config import PRINT_SWITCH,MODEL_MAX_INPUT, DATABASE_URL
+from config import PRINT_SWITCH,MODEL_MAX_INPUT, DATABASE_DSN
 from agent.tools import *
 from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里提供 get_mcp_tools
 from agent.tools import BLACK_LIST
@@ -291,11 +291,14 @@ async def create_graph(store:Store,config: RunnableConfig):
             system_content += "\n请使用上述工具完成当前步骤。"
         else:
             system_content += "\n无需使用工具，请直接回答。"
-
+        msgs_for_llm = []
+        # 附上提示词rag
+        if current_capability == "rag":
+            msgs_for_llm.append(SystemMessage(content = rag_system_prompt))
+        
         # 构建消息历史 - 保持消息对象的结构-langgraph的格式需求-上下文使用
-        msgs_for_llm = [SystemMessage(content=system_content)]
-        if len(msgs) >= 2:
-            # 从后往前查找最近的 AIMessage 和 ToolMessage 配对
+        msgs_for_llm.append(SystemMessage(content = system_content))
+        if len(msgs) >= 2:     # 从后往前查找最近的 AIMessage 和 ToolMessage 配对
             temp_history = []
             i = len(msgs) - 1
             collected_pairs = 0
@@ -350,9 +353,15 @@ async def create_graph(store:Store,config: RunnableConfig):
             print(f"当前工具的执行结果{response.content}")
             print(f"[agent_node-执行] 步骤: {current_step}, 工具: {current_capability}, Token: {usage_delta}")
 
-        # 不管什么情况都要消耗步骤
-        next_steps = plan_steps[1:]  # 该 step 已经“落地成文本结果”，消耗它
-        next_tools = plan_step_tools[1:]
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if tool_calls:
+            # 本轮要执行工具：不要消耗 step
+            next_steps = plan_steps
+            next_tools = plan_step_tools
+        else:
+            # 本轮不调用工具：认为当前 step 已完成，推进
+            next_steps = plan_steps[1:]
+            next_tools = plan_step_tools[1:]
         return {
             "messages":[response],
             "usages": usage_delta,
@@ -514,12 +523,12 @@ async def draw(graph):
     except Exception as e:
         print(f"生成流程图失败: {e}")
         print("继续执行其他任务...")
- # 输入限制-实际上也是裁剪的强制修剪范围
+# 输入限制-实际上也是裁剪的强制修剪范围
 
 if __name__ == "__main__":
     async def test():
         # 1. 使用async with管理数据库连接
-        async with AsyncPostgresStore.from_conn_string(DATABASE_URL) as store:
+        async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
             await store.setup()
             print("PostgreSQL Store 数据初始化成功!")
             config = {"configurable": {"thread_id": "002", "user_id": "user_003"}}
