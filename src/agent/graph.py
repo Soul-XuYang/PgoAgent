@@ -13,7 +13,6 @@ from langgraph.store.postgres import AsyncPostgresStore
 from langgraph.types import interrupt
 from langgraph_runtime_inmem.store import Store
 from langmem.short_term import SummarizationNode
-from pydantic import BaseModel, Field
 
 from agent.subAgents.decisionAgent import decision_graph
 from config import PRINT_SWITCH,MODEL_MAX_INPUT, DATABASE_URL
@@ -101,7 +100,6 @@ class ToolNode:
         self._max_output_chars = input_limit /2 * 4 # 保证单个工具的最大token数
 
     async def __call__(self, state: State) -> State:
-        approved = {}
         if not (msgs := state.get("messages")):
             raise ValueError("状态中没有上下文的消息内容")
         latest = msgs[-1] # 注意这里取的是最新的消息
@@ -532,7 +530,7 @@ if __name__ == "__main__":
 
             # 3. 测试数据
             init_state = {
-                "messages": [HumanMessage(content="你好，请列出当前的目录有哪些文件呢注意目录和文件名都要列出来?")],
+                "messages": [HumanMessage(content="你好，请列出当前的目录有哪些文件呢?")],
                 "context": {},
             }
             # 4. 执行Graph
