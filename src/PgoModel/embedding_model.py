@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import requests
 import time
+import numpy as np
 from typing import List, Union
 from langchain.embeddings.base import Embeddings
 from config.logger_config import logger
@@ -295,6 +296,12 @@ class EmbeddingModelAsync(Embeddings):
         :return: token使用情况
         """
         return getattr(self, 'token_usage', {})
+# 需要在嵌入模型中添加归一化处理
+def check_normalization(embedding: List[float]) -> bool:
+    """检查向量是否已L2归一化"""
+    vec = np.array(embedding)
+    norm = np.linalg.norm(vec) # 范数L2
+    return abs(norm - 1.0) < 1e-6  # 允许小的浮点误差
 # 使用示例
 if __name__ == "__main__":
     # 1. 初始化
@@ -310,8 +317,10 @@ if __name__ == "__main__":
     embeddings = embedder.embed_documents(documents)
     print(f"文档向量数量: {len(embeddings)}")
     print(f"第一个文档向量维度: {len(embeddings[0])}")
+    print(check_normalization(embeddings[0]))
     print(embedder.get_usage())
     print(50*'-')
-    query_embedding = embedder.embed_query("查询文本")
+    query_embedding = embedder.embed_query("查询第二个文档")
     print(f"查询向量维度: {len(query_embedding)}")
+    print(check_normalization(query_embedding))
     print(embedder.get_usage())

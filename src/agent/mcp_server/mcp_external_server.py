@@ -5,8 +5,9 @@ import os
 from typing import Any
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from agent.my_llm import llm
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from config.basic_config import logger
 
 # python_mcp_server_config = {
 #     "url": "http://127.0.0.1:7070/sse",
@@ -15,7 +16,6 @@ from agent.my_llm import llm
 user ="admin"
 BASE_DIR = Path(__file__).resolve().parents[3]  # your-project/  获取文件路径并向上走
 MCP_CONFIG_DIR = BASE_DIR /  os.path.join("mcp_configs", user)# my-project/mcp_configs/
-
 
 # 这种配置肯定是字典类型的
 def transport_to_type(mcp_list: Any) -> dict:
@@ -48,9 +48,9 @@ def load_all_mcp_configs():
             connections.update(servers)
 
         except json.JSONDecodeError as e:
-            print(f"警告：无法解析配置文件 {path}: {e}")
+            logger.warning(f"警告：无法解析配置文件 {path}: {e}")
         except Exception as e:
-            print(f"警告：读取配置文件 {path} 时出错: {e}")
+            logger.warning(f"警告：读取配置文件 {path} 时出错: {e}")
     # 统一处理transport字段
     return transport_to_type(connections)
 
@@ -62,7 +62,7 @@ async def get_mcp_tools():
         return mcp_tools
     except Exception as e:
     # 开发环境下连不上就直接用空工具，避免拖死 graph
-        print("[MCP] 加载 MCP 工具失败，使用空工具列表。错误：", repr(e))
+        logger.warning("[MCP] 加载 MCP 工具失败，使用空工具列表。错误：", repr(e))
         return []
 # 测试函数
 async def test():
