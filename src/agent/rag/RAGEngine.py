@@ -113,7 +113,7 @@ class RagEngine:
         docs = query_result["documents"][0]
         distances = query_result["distances"][0]
         metadatas = query_result["metadatas"][0]
-        filtered = [(doc,metadata) for doc,dist,metadata in zip(docs,distances,metadatas) if dist <= query_distance_threshold]
+        filtered = [(doc,metadata) for doc,dist,metadata in zip(docs,distances,metadatas) if dist >= query_distance_threshold]
         if not filtered:
             return []
         return filtered
@@ -133,7 +133,7 @@ class RagEngine:
             str: 构建好的RAG提示词
         """
         if use_hybrid:
-            search_results = self.hybrid_search(question, top_k=top_k, alpha = hybrid_alpha)
+            search_results = self.query_hybrid_search(question, top_k=top_k, alpha = hybrid_alpha)
         else:
             search_results = self.query_embedded_store(question, top_k=top_k)
         #  实际的search_results是两个数值
@@ -317,14 +317,14 @@ class RagEngine:
         Args:
         question (str): 用于重排序的查询问题
         data (List[str]): 需要重排序的文档列表
-        topn (Optional[int], optional): 返回前n个最相关的结果。默认为None，表示返回全部结果
+        top_n (Optional[int], optional): 返回前n个最相关的结果。默认为None，表示返回全部结果
         max_chunks_per_doc (int, optional): 每个文档的最大分块数量。默认为123
         overlap_tokens (int, optional): 文档分块时的重叠token数量。默认为40
 
     Returns:
         Dict[str, Any]: 包含重排序结果的字典，通常包含：
-            - results: 重排序后的文档列表，每个文档包含相关性分数和索引
-            - usage: token使用情况（如果API返回）
+            - results(list): 重排序后的文档列表，每个文档包含相关性分数和索引
+            - tokens: token使用情况
             - id: 请求ID（如果API返回）
         """
 
@@ -358,7 +358,7 @@ class RagEngine:
 
         return self.indexer.search_index(question, top_k=top_k) # 直接返回对应的文档
 
-    def hybrid_search(
+    def query_hybrid_search(
             self,
             question: str,
             top_k: int,
@@ -552,7 +552,7 @@ class AsyncRagEngine:
         distances = query_result["distances"][0]
         metadatas = query_result["metadatas"][0]
         filtered = [(doc, metadata) for doc, dist, metadata in zip(docs, distances, metadatas)
-                    if dist <= query_distance_threshold]
+                    if dist >= query_distance_threshold]
         if not filtered:
             return []
         return filtered
@@ -568,7 +568,7 @@ class AsyncRagEngine:
     ) -> str:
         """异步构建 RAG Prompt"""
         if use_hybrid:
-            search_results = await self.hybrid_search(question, top_k=top_k, alpha=hybrid_alpha)
+            search_results = await self.query_hybrid_search(question, top_k=top_k, alpha=hybrid_alpha)
         else:
             search_results = await self.query_embedded_store(question, top_k=top_k)
 
@@ -783,7 +783,7 @@ class AsyncRagEngine:
             lambda: self.indexer.search_index(question, top_k=top_k)
         )
 
-    async def hybrid_search(
+    async def query_hybrid_search(
             self,
             question: str,
             top_k: int,
@@ -886,7 +886,7 @@ class AsyncRagEngine:
 # ====================== 简单运行示例 ======================
 if __name__ == "__main__":
     engine = RagEngine()
-    documents = DocumentLoader().load_file("矩阵.md") # 专门的内容加载器
+    documents = DocumentLoader().load_file("test.md") # 专门的内容加载器
     print(documents)
     splitter_md = TextSplitter() # 专门的文本分块器
     splitter_txt = TextSplitter(mode = "semantic")
@@ -904,7 +904,7 @@ if __name__ == "__main__":
     # print(engine.get_all_documents()) # 打印数据库的所有文档
     print(50 * '-')
     print("rag构建的prompt")
-    answer=engine.build_answer_prompt("矩阵的本质是什么呢，如何理解矩阵的本质？",use_rerank=True,use_hybrid=True,top_k=20,rerank_top_n=5,hybrid_alpha=0.6)
+    answer=engine.build_answer_prompt(" 慢羊羊给懒羊羊的道具是什么呢?",use_rerank=True,use_hybrid=True,top_k=20,rerank_top_n=5,hybrid_alpha=0.6)
     print(answer)
     close_chroma()
 

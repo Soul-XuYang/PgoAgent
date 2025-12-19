@@ -9,7 +9,6 @@ from PgoModel import RerankModel, RerankModelAsync
 load_dotenv(override=True)  # 加载环境变量
 API_KEY= os.getenv("OPENAI_API_KEY")  # 从环境变量中获取OPENAI_API_KEY的值
 BASE_URL = os.getenv("OPENAI_BASE_URL")  # 从环境变量中获取OPENAI_BASE_URL的值
-DATABASE_URL = os.getenv("DATABASE_URL")
 # 嵌入模型
 EMBEDDING_MODEL_URL= os.getenv("EMBEDDING_MODEL_URL")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
@@ -132,6 +131,7 @@ def get_all_docs():
         print(f"元数据: {results['metadatas'][i]}")
         print(f"向量: {results['embeddings'][i]}")
         print("-" * 50)
+
 # def get_all_docs():
 #     results = _collection.get(include=['documents', 'metadatas', 'embeddings'])
 #     for i in range(len(results['ids'])):

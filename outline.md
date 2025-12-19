@@ -14,7 +14,7 @@ Python（LangChain / LangGraph / FastAPI）
     ↓（HTTP/OpenAI API）
 推理引擎：vLLM（本地模型服务）
     ↓
-大模型权 Python-Pytorch（Qwen / Llama / DeepSeek / 自训模型）
+大模型权 Python-Pytorch（Qwen / Llama / DeepSeek / 自训模型-后续进行微调
     ↓
 向量数据库（Chroma / Qdrant）
     ↓
@@ -64,7 +64,7 @@ Python（LangChain / LangGraph / FastAPI）
 - 相似度检索
 - RAG 的前半部分（知识召回）
 选择理由：
-- 本地即可运行（不用 docker）：代码量小和 LangChain 配合最好
+- 本地即可运行（不用 docker）：代码量小和 LangChain、Langgraph 配合最好
 ✔ 普通数据库（用于长期记忆）
 - MongoDB（存用户偏好、历史事实、Memory）
 - JSON 结构容易适配
