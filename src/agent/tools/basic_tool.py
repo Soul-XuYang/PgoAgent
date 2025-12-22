@@ -5,6 +5,8 @@ import statistics
 from datetime import datetime as dt
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
+from datetime import datetime, timedelta
+
 
 
 
@@ -25,6 +27,18 @@ def get_date()->str:
     """
     return get_datetime()
 
+@tool("get_time")
+def get_time() -> str:
+    """获取当前时间
+    Returns:
+        str: 当前时间（24小时制）
+    Example:
+        例如:get_time.run() → "14:30"
+    """
+    now = dt.now()
+    current_time = now.strftime("%H:%M")
+    return current_time
+
 @tool("date_calculate")
 def date_calculate(base_date: Optional[str] = None, days_diff: int = 0) -> str: # 日期计算函数-base_date可以为none或者str
     """对日期进行加减计算（默认基于当前日期）
@@ -43,6 +57,57 @@ def date_calculate(base_date: Optional[str] = None, days_diff: int = 0) -> str: 
         base = datetime.datetime.now() # 默认日期
     target = base + datetime.timedelta(days=days_diff) # 计算真实的日期
     return target.strftime("%Y年%m月%d日")
+
+
+
+
+
+@tool("time_calculate")
+def time_calculate(base_time: Optional[str] = None, hours_diff: int = 0, minutes_diff: int = 0) -> str:
+    """对时间进行加减计算（默认基于当前时间）
+    Args:
+        base_time: 基准时间（可选，格式如「14:30」，不传入则是默认当前时间）
+        hours_diff: 加减小时数（正数加，负数减，如 3=3小时后，-1=1小时前）
+        minutes_diff: 加减分钟数（正数加，负数减，如 30=30分钟后，-15=15分钟前）
+    Returns:
+        str: 计算后的时间（中文格式）
+    Example:
+        time_calculate.run("14:30", hours=2, minutes=30) → "下午3:00"
+    """
+    # 处理基准时间
+    if base_time is not None:
+        # 解析输入的时间字符串
+        base = datetime.strptime(base_time, "%H:%M")
+    else:
+        # 使用当前时间
+        base = datetime.now()
+
+    # 计算目标时间
+    target = base + timedelta(hours=hours_diff, minutes=minutes_diff)
+
+    # 格式化输出
+    hour = target.hour
+    minute = target.minute
+
+    # 判断时段
+    if 0 <= hour < 6:
+        period = "凌晨"
+    elif 6 <= hour < 12:
+        period = "上午"
+    elif 12 <= hour < 18:
+        period = "下午"
+    else:
+        period = "晚上"
+
+    # 转换为12小时制
+    display_hour = hour if hour <= 12 else hour - 12
+    if display_hour == 0:
+        display_hour = 12
+
+    # 格式化分钟
+    minute_str = f"{minute:02d}"
+
+    return f"{period}{display_hour}:{minute_str}"
 
 @tool('calculator',parse_docstring= True)
 def calculator(expression:str)->str:
@@ -123,17 +188,7 @@ def validate_email(email: str) -> str:
         return "非法邮箱：缺少顶级域名（如 .com）"
     else:
         return "非法邮箱：格式不符合规范"
-@tool("get_time")
-def get_time() -> str:
-    """获取当前时间
-    Returns:
-        str: 当前时间（24小时制）
-    Example:
-        例如:get_time.run() → "14:30"
-    """
-    now = dt.now()
-    current_time = now.strftime("%H:%M")
-    return current_time
+
 @tool
 def echo(text: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """调试/回显"""
@@ -159,6 +214,4 @@ if __name__ == "__main__":
     print(calculator.description)
     result2 = calculator.run("2+3**4+exp(8)") # 非普通函数必须用Run来运行
     print(result2)
-    print(get_date.run(""))
-    # print(print(web_search.invoke("如何使用langchain")))
-    print(get_time.run(""))
+

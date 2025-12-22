@@ -2,7 +2,7 @@ import asyncio
 import selectors
 import json
 import uuid
-from typing import Annotated, List, TypedDict, NotRequired
+from typing import Annotated, List, TypedDict, NotRequired, Literal
 from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.runnables import RunnableConfig
@@ -13,9 +13,9 @@ from langgraph.store.postgres import AsyncPostgresStore
 from langgraph.types import interrupt
 from langgraph_runtime_inmem.store import Store
 from langmem.short_term import SummarizationNode
-
+from config import logger
 from agent.subAgents.decisionAgent import decision_graph
-from config import PRINT_SWITCH,MODEL_MAX_INPUT, DATABASE_DSN
+from config import PRINT_SWITCH, DATABASE_DSN
 from agent.tools import *
 from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里提供 get_mcp_tools
 from agent.tools import BLACK_LIST
@@ -26,9 +26,11 @@ from utils import extract_token_usage,accumulate_usage
 from langgraph.checkpoint.memory import MemorySaver
 from agent.subAgents.memoryAgent import memory_graph, get_user_memory
 
-# 参数设置
-model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
-input_limit = MODEL_MAX_INPUT.get(model_name, 8192)
+# 参数设置-在配置文件已设置
+input_limit = 8192
+max_tool_output_chars = 500
+MAX_TOOL_RESULT_CHARS = 500
+
 # 主图中 State 定义处
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -36,12 +38,16 @@ class State(TypedDict):
     context: NotRequired[dict[str]] # 上下文，这里更多和对话相连-注重于chat功能
     requires_agent: NotRequired[bool]
     requires_rag: NotRequired[bool]
-    # 工具-设置
+    # 计划步骤
     plan_steps: NotRequired[List[str]]
     plan_step_tools: NotRequired[List[str]]
-    origin_plan_steps:NotRequired[List[str]]
-    # 防止无限循环
+    current_plan_step: NotRequired[int] # 当前步骤
+    tool_attempts: NotRequired[int] # 工具尝试次数
+    # 防止整体的无限循环
     agent_loop_count: NotRequired[int]
+    # 状态机状态
+    step_status: NotRequired[Literal["continue", "step_done", "plan_done", "fail"]]
+
 
 
 # 不断总结以及裁剪信息
@@ -56,8 +62,11 @@ async def summarization_node(
     state["requires_rag"] = False
     state["plan_step_tools"] = []
     state["plan_steps"] = []
+    state["current_plan_step"] = 0
     state["usages"] = {}
     state["agent_loop_count"] = 0  # 重置循环计数器
+    state["step_status"] = "continue"# 初始化状态
+    state["tool_attempts"] = 0  # 初始化RAG尝试次数
     # --------------------------------------------
     base_node = SummarizationNode(
         token_counter=count_tokens_approximately,
@@ -88,6 +97,51 @@ async def summarization_node(
     state["messages"] = [summary_msg] + tail  # 总结+裁剪信息
     return state
 
+# 工具结果判断函数
+def tool_result_judgement(tool_msg: ToolMessage) -> bool:
+    tool_content = (tool_msg.content or "").strip()
+    # 无内容失败或者工具执行失败
+    if not tool_content :
+        return True
+    if "工具执行失败" in tool_content or "❌" in tool_content:
+        return True
+    # RAG 工具特殊判断
+    if tool_msg.name == "rag_retrieve":
+        try:
+            data = json.loads(tool_content)
+            # contexts 为空、空列表、空字符串或 count 为 0 都视为失败
+            if isinstance(data, dict):
+                contexts = data.get("contexts", "")
+                count = data.get("count", 0)
+                if not contexts or (isinstance(contexts, list) and len(contexts) == 0) or count == 0:
+                    return True
+                if "未找到" in str(contexts) or "未找到相关内容" in str(contexts) or "知识库中未找到" in str(contexts):
+                    return True
+        except (json.JSONDecodeError, Exception):
+            pass  # 如果不是 JSON，继续下面的通用判断
+
+    # 常见失败/空结果提示
+    bad_markers = ["未找到", "无结果", "not found", "empty", "error:", "exception:", "知识库中未找到"]
+    cl = tool_content.lower()
+    if any(x in cl for x in bad_markers):
+        return True
+
+    # 尝试解析 JSON，空 dict/list 视作坏结果
+    try:
+        data = json.loads(tool_content)
+        if isinstance(data, dict) and len(data) == 0:
+            return True
+        if isinstance(data, list) and len(data) == 0:
+            return True
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON解析错误: {str(e)}")
+        return False
+    except Exception as e:
+        logger.info(f"处理数据时发生错误: {str(e)}")
+        return False
+
+    return False
+
 class ToolNode:
     """
     处理大模型返回的 tool_calls-优先调用本地工具。
@@ -97,13 +151,20 @@ class ToolNode:
     """
     def __init__(self, tools: list[BaseTool]):         # 将工具列表转换为 {name: tool} 的映射-注册
         self._tool_map = {tool.name: tool for tool in tools}
-        self._max_output_chars = input_limit /2 * 4 # 保证单个工具的最大token数
+        self._max_output_chars = int(input_limit / 2 * 4) # 保证单个工具的最大token数
 
     async def __call__(self, state: State) -> State:
         if not (msgs := state.get("messages")):
             raise ValueError("状态中没有上下文的消息内容")
         latest = msgs[-1] # 注意这里取的是最新的消息
-        tool_infos = latest.tool_calls
+        tool_infos = getattr(latest, "tool_calls", None) or [] # 保险措施
+        if not tool_infos:
+            # 没有工具调用就不要执行，也不要涨 attempts
+            return {
+                "messages": [],
+                "usages": {},
+                "tool_attempts": state.get("tool_attempts", 0),
+            }
         # 分离合法和黑名单工具
         banned_tools = []
         allowed_tools = []
@@ -142,20 +203,23 @@ class ToolNode:
                     if allowed_tools:
                         executed_messages = await self._execute_tool_calls(allowed_tools)
                         tool_messages.extend(executed_messages)
-
+                    inc = 1 if allowed_tools else 0 # 如果有合法工具执行，则attempts+1,以哦错
                     return {
                         "messages": tool_messages,
                         "usages": {},
+                        "tool_attempts": state.get("tool_attempts", 0) + inc,
                     }
                 else:
                     # 批准：黑名单工具加入允许列表
                     allowed_tools.extend(banned_tools)
 
-        # 执行所有允许的工具（包括批准后的黑名单工具）
-        tool_messages = await self._execute_tool_calls(allowed_tools)
+        # 执行所有允许的工具
+        tool_messages = await self._execute_tool_calls(allowed_tools) if allowed_tools else []
+        inc = 1 if allowed_tools else 0 # 保险操作
         return {
             "messages": tool_messages,
             "usages": {},
+            "tool_attempts": state.get("tool_attempts", 0) + inc,
         }
     async def _execute_tool_calls(self,tool_calls: list[dict]) -> List[ToolMessage]:
 
@@ -199,43 +263,55 @@ class ToolNode:
 
 async def answer_thinking_node(state: State) -> State:
     msgs = state.get("messages", [])
-    origin_plan_steps = state.get("origin_plan_steps", [])
+    origin_plan_steps = state.get("plan_steps", [])
     ctx = state.get("context", {})
     fallback_question = ctx.get("current_user_question", "用户问题缺失")
 
     # 收集所有 ToolMessage（工具执行结果）
+    K=3
     tool_results = []
-    ai_messages = []
-
+    has_rag_result = False
     # 从后往前查找，收集本次任务周期内的所有消息
     for msg in reversed(msgs):
-        if isinstance(msg, HumanMessage):
-            # 遇到用户问题就停止（说明到达本次任务的起点）
-            if msg.content == fallback_question:
-                break
-        elif isinstance(msg, ToolMessage):
-            tool_results.insert(0, msg)  # 保持顺序
-        elif isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
-            ai_messages.insert(0, msg)
+        if isinstance(msg, ToolMessage):
+            c = msg.content or ""
+            if msg.name == "rag_retrieve":
+                has_rag_result = True # 提示词标记rag工具的使用
+            if len(c) > MAX_TOOL_RESULT_CHARS:
+                c = c[:MAX_TOOL_RESULT_CHARS] + f"\n...[已截断，原{len(msg.content)}字符]"
 
-    # 构建执行记录描述
-    execution_log = "执行步骤的详细记录：\n"
+            tool_results.insert(0, ToolMessage(content=c, name=msg.name, tool_call_id=msg.tool_call_id))
+            if len(tool_results) >= K:
+                break
+        if isinstance(msg, HumanMessage) and msg.content == fallback_question:
+            break
+
+    execution_log = f"工具调用结果摘要（已自动精简）：\n"
     if tool_results:
         for i, tool_msg in enumerate(tool_results, 1):
-            execution_log += f"\n步骤 {i}：工具 {tool_msg.name}\n"
-            execution_log += f"返回结果：{tool_msg.content}\n"
+            execution_log += f"[{tool_msg.name}] {tool_msg.content}\n"
     else:
         execution_log += "\n⚠️ 警告：未找到工具执行结果！\n"
 
+    base_requirements = (
+        "- 基于真实数据回答，不编造\n"
+        "- 如有具体数据（文件名、时间等），请完整列出\n"
+        "- 语言简洁清晰"
+    )
+
+    if has_rag_result:
+        base_requirements = (
+            "- 关于知识库的内容请用rag_retrieve返回的内容回答\n"
+            "- 禁止编造、推测、补充任何未在知识库中出现的信息\n"
+            "- 如果知识库中未找到相关信息，明确告知用户\n"
+        )
+    # 依据rag的使用进行替换
     question = (
         f"用户提问: {fallback_question}\n"
-        f"解决用户问题的计划步骤: {origin_plan_steps}\n\n"
+        f"解决用户问题的计划: {origin_plan_steps}\n\n"
         f"{execution_log}\n"
         "请根据上述工具返回的实际数据，详细、准确地回答用户的问题。\n"
-        "要求:\n"
-        "- 提取工具返回的真实数据（JSON 格式的文件列表、路径信息等）\n"
-        "- 不要编造任何数据\n"
-        "- 如果工具返回了具体的文件名和目录，请完整列出"
+        f"要求:\n{base_requirements}"
     )
     msgs_for_summary = [SystemMessage(content=question)]
     # 强制裁剪到安全范围
@@ -247,17 +323,18 @@ async def answer_thinking_node(state: State) -> State:
         start_on="system",
         end_on="system",
     )
-    msgs_for_summary = trimmed
-    response = await llm.ainvoke(msgs_for_summary)
+    if not trimmed:
+        trimmed = [SystemMessage(content=question[-6000:])]
+    response = await llm.ainvoke(trimmed)
     usage_delta = extract_token_usage(response)  # 获取此次对话的token使用清空
     if PRINT_SWITCH:
         print(f"[agent_node-总结]的Token增量: {usage_delta}")
     return {
-        "messages": msgs + [response],
+        "messages": [response],
         "usages": usage_delta
     }
 
-async def create_graph(store:Store,config: RunnableConfig):
+async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=2):
     mcp_tools= await get_mcp_tools()
     all_tools=mcp_tools + LOCAL_TOOLS
     # 对话节点
@@ -266,56 +343,78 @@ async def create_graph(store:Store,config: RunnableConfig):
         # 获取规划结果
         plan_steps = state.get("plan_steps", [])
         plan_step_tools = state.get("plan_step_tools", [])
-        # 获取当前步骤的 capability - 获取当前的工具能力
-        current_capability = plan_step_tools[0] if plan_step_tools else "none"
-        current_step = plan_steps[0] if plan_steps else "直接处理用户请求"
+        current_plan_step = state.get("current_plan_step", 0) # 获取当前的step
+        if not plan_steps or current_plan_step >= len(plan_steps): # 跳出当前循环-计划结束保护
+            return {
+                "messages": [],
+                "usages": {},
+                "step_status": "plan_done",
+                "agent_loop_count": state.get("agent_loop_count", 0) + 1, # 默认+1
+            }
+
+        # 获取当前步骤的 capability 和 规划步骤信息
+        current_capability = plan_step_tools[current_plan_step] if plan_step_tools else "none" # 没有设置为none
         # 根据 capability 筛选相关工具
+        current_step = plan_steps[current_plan_step] if plan_steps else "直接处理用户请求"
         relevant_tool_names = CAPABILITY_TO_TOOLS.get(current_capability, [])
 
         if relevant_tool_names:
-            # 根据工具名称从 all_tools 中筛选出实际的工具对象
+            # 根据工具名称从 all_tools 中筛选出实际的工具对象-里面包含基本的工具和RAG工具
             relevant_tools = [t for t in LOCAL_TOOLS if t.name in relevant_tool_names]
         else:
             relevant_tools = []  # none 或者未知 capability，不绑定工具
-        if "external_mcp" in current_capability and mcp_tools:
+        if "external_mcp" in current_capability and mcp_tools: # 绑定MCP
             relevant_tools.extend(mcp_tools)
 
         # 创建系统提示
         ctx = state.get("context", {})
-        user_question = ctx.get("current_user_question", "")
-
-        system_content = f"用户问题: {user_question}\n"
-        system_content += f"当前任务步骤: {current_step}\n"
-        if relevant_tools:
-            system_content += f"可用工具: {', '.join([t.name for t in relevant_tools])}\n"
-            system_content += "\n请使用上述工具完成当前步骤。"
+        user_question = ctx.get("current_user_question", "") # 上下文内容
+        system_content = f"问题: {user_question}\n当前步骤: {current_step}\n"
+        if current_capability == "rag_retrieve":
+            system_content += (
+                "1,必须调用 rag_retrieve 完成本步骤，不得跳过。\n"
+                "2.若返回为空/不相关：先 rag_rewrite_query，再 rag_retrieve，最多重试 2 次。\n"
+                "3.得到检索结果后直接回答，禁止臆测。"
+            )
+        elif relevant_tools:
+            system_content += "需要使用工具完成当前步骤。"
+            system_content += "⚠️ 重要提示：每个工具只需调用一次，获得结果后立即停止，不要重复调用。"
         else:
-            system_content += "\n无需使用工具，请直接回答。"
-        msgs_for_llm = []
-        # 附上提示词rag
-        if current_capability == "rag":
-            msgs_for_llm.append(SystemMessage(content = rag_system_prompt))
-        
-        # 构建消息历史 - 保持消息对象的结构-langgraph的格式需求-上下文使用
-        msgs_for_llm.append(SystemMessage(content = system_content))
+            system_content += "\n无需工具，请直接回答。"
+        msgs_for_llm = [SystemMessage(content=system_content)]
+
         if len(msgs) >= 2:     # 从后往前查找最近的 AIMessage 和 ToolMessage 配对
             temp_history = []
             i = len(msgs) - 1
             collected_pairs = 0
-            max_pairs = 3  # 最多保留 3 对历史
+            max_pairs = 1  # 最多保留1对历史
+            last_human_question_index = -1
+            for idx in range(len(msgs) - 1, -1, -1):
+                if isinstance(msgs[idx], HumanMessage) and msgs[idx].content == user_question: # 当前对话的消息
+                    last_human_question_index = idx # 获取最近
+                    break
             while i >= 0 and collected_pairs < max_pairs:
                 msg = msgs[i]
                 # 找到 AIMessage with tool_calls
+                if i < last_human_question_index:
+                    break
                 if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
                     # 收集这个 AIMessage 的所有 tool_call_ids
                     tool_call_ids = {tc['id'] for tc in msg.tool_calls}
                     tool_messages = []
 
                     # 向后查找对应的 ToolMessage
-                    for j in range(i + 1, len(msgs)):
+                    for j in range(i + 1, len(msgs)): # 对应的想后找到tool_msg
                         if isinstance(msgs[j], ToolMessage):
                             if msgs[j].tool_call_id in tool_call_ids:
-                                tool_messages.append(msgs[j])
+                                tool_msg = msgs[j]
+                                if len(tool_msg.content) > max_tool_output_chars:
+                                    tool_msg = ToolMessage( # ToolMessage的必要信息-这三个必不可少
+                                        content=f"{tool_msg.content[:max_tool_output_chars]}\n\n⚠️ [输出已截断,只保留{max_tool_output_chars}]",
+                                        name=tool_msg.name,
+                                        tool_call_id=tool_msg.tool_call_id
+                                    )
+                                tool_messages.append(tool_msg)
                                 tool_call_ids.discard(msgs[j].tool_call_id)
                         elif isinstance(msgs[j], AIMessage):
                             # 遇到下一个 AIMessage 停止
@@ -337,11 +436,41 @@ async def create_graph(store:Store,config: RunnableConfig):
                 strategy="last",
                 token_counter=count_tokens_approximately,
                 max_tokens=input_limit,
-                start_on=("human", "system"),
-                end_on=("human", "system"),
+                start_on="human",
+                end_on=("human", "ai"),
             )
             msgs_for_llm = trimmed
-        if relevant_tools:
+        tool_attempts = state.get("tool_attempts", 0)
+        allow_use_tool = bool(relevant_tools) and (tool_attempts < max_tool_attempts)
+        override = None
+        if msgs and isinstance(msgs[-1], ToolMessage):
+            judge_bad = tool_result_judgement(msgs[-1])
+            if judge_bad and allow_use_tool:
+                # RAG 工具的特殊重试提示
+                if msgs[-1].name == "rag_retrieve":
+                    override = (
+                        f"\n⚠️ 检测到RAG检索结果为空或不相关，将进行重试。"
+                        f"当前工具尝试次数: {tool_attempts}/{max_tool_attempts}。\n"
+                        "1. 请先调用rag_rewrite_query重写query（提供失败原因：检索结果为空或不相关）\n"
+                        "2. 使用重写后的refined_query再次调用rag_retrieve（可调整参数）\n"
+                        "如果仍失败，请说明知识库中未找到相关信息。"
+                    )
+                else:
+                    override = (
+                        f"\n⚠️ 检测到上一轮工具结果可能无效，将进行重试。"
+                        f"当前工具尝试次数: {tool_attempts}/{max_tool_attempts}。"
+                        "要求：本轮最多再调用一次工具，并尽量调整参数以获得不同结果。"
+                    )
+                allow_use_tool = True
+        if tool_attempts >= max_tool_attempts and relevant_tools:
+            override = (
+                f"\n⚠️ 本步骤工具调用已达上限({tool_attempts}/{max_tool_attempts})，禁止再调用工具。"
+                "请基于已有信息完成当前步骤，必要时说明无法补齐的数据。"
+            )
+            allow_use_tool = False
+        if override:
+            msgs_for_llm.insert(0, SystemMessage(content=override))
+        if allow_use_tool:
             llm_run = llm.bind_tools(relevant_tools)  #  只绑定相关工具-减轻工具调用负担
         else:
             llm_run = llm
@@ -349,24 +478,30 @@ async def create_graph(store:Store,config: RunnableConfig):
         response: BaseMessage = await llm_run.ainvoke(msgs_for_llm)
         usage_delta = extract_token_usage(response)
         if PRINT_SWITCH:
-            print(system_content)
-            print(f"当前工具的执行结果{response.content}")
-            print(f"[agent_node-执行] 步骤: {current_step}, 工具: {current_capability}, Token: {usage_delta}")
-
+            logger.info(system_content)
+            logger.info(f"当前工具的执行结果{response.content}")
+            logger.info(f"[agent_node-执行] 步骤: {current_step}, 工具: {current_capability}, Token: {usage_delta}")
         tool_calls = getattr(response, "tool_calls", None) or []
+        if (not allow_use_tool) and tool_calls:
+            # 关键：清空 response 本身的 tool_calls，避免 agent_choice 再次 use_tools
+            response.tool_calls = []
+            tool_calls = []
+        # 依据是否执行工具更新状态机
         if tool_calls:
-            # 本轮要执行工具：不要消耗 step
-            next_steps = plan_steps
-            next_tools = plan_step_tools
+            next_step = current_plan_step
+            next_status = "continue"
+            next_tool_attempts = state.get("tool_attempts", 0)  # 不重置
         else:
-            # 本轮不调用工具：认为当前 step 已完成，推进
-            next_steps = plan_steps[1:]
-            next_tools = plan_step_tools[1:]
+            next_step = current_plan_step + 1
+            next_status = "plan_done" if next_step >= len(plan_steps) else "step_done"
+            next_tool_attempts = 0  # ✅ 推进 step 必须重置 这个易错
+
         return {
-            "messages":[response],
+            "messages": [response],
             "usages": usage_delta,
-            "plan_steps": next_steps,
-            "plan_step_tools": next_tools,
+            "current_plan_step": next_step,
+            "step_status": next_status,
+            "tool_attempts": next_tool_attempts,
             "agent_loop_count": state.get("agent_loop_count", 0) + 1,
         }
 
@@ -383,12 +518,12 @@ async def create_graph(store:Store,config: RunnableConfig):
         injected_msgs = []
         # 注入用户画像，让回答更贴合用户，但不要直接给用户看
         if user_profile:
+            profile_summary = str(user_profile)[:300] + "..." if len(str(user_profile)) > 300 else str(user_profile)
             injected_msgs.append(
                 SystemMessage(
                     content=(
-                        "以下是当前用户的长期画像信息，用于帮助你更个性化地回答。"
-                        "不要直接把这些条目原样复述给用户：\n"
-                        f"{user_profile}"
+                        f"用户画像（参考）：{profile_summary}\n"
+                        "提示：个性化回答，不要复述画像。"
                     )
                 )
             )
@@ -475,31 +610,63 @@ async def create_graph(store:Store,config: RunnableConfig):
 # ===== 路由即条件函数-langgraph里推荐路由函数只做判断别的都不做 =====
 def agent_choice(state: State):
     plan_steps = state.get("plan_steps", [])
-    plan_step_tools = state.get("plan_step_tools", [])
+    current_step_index = state.get("current_plan_step", 0)
     # 获取循环计数器
     loop_count = state.get("agent_loop_count", 0)
+    # 获取显式状态
+    step_status = state.get("step_status", "continue")
+
+    # ——优先检查显式状态机——
+    if step_status == "plan_done":
+        # 所有计划步骤完成，进入总结
+        if PRINT_SWITCH:
+            logger.info(f"[agent_choice] 状态机：plan_done → 进入总结阶段")
+        return "think-answer"
+
+    if step_status == "fail":
+        # 执行失败，强制结束
+        if PRINT_SWITCH:
+            logger.info(f"[agent_choice] 状态机：fail → 强制结束")
+        return "think-answer"
 
     # 安全保护：如果循环超过10次，强制结束
     if loop_count >= 10:
         if PRINT_SWITCH:
             print(f"[错误] agent_node 循环超过10次，强制结束！")
-            print(f"[错误] 剩余步骤: {plan_steps}")
-            print(f"[错误] 剩余工具: {plan_step_tools}")
+            print(f"[错误] 当前步骤索引: {current_step_index}/{len(plan_steps)}")
+            print(f"[错误] 剩余步骤: {plan_steps[current_step_index:] if current_step_index < len(plan_steps) else []}")
         return "think-answer"
 
-    # 先检查是否有工具调用，再检查计划完成
-    msgs = state["messages"]
-    latest_msg = msgs[-1] # 最新的消息有没有工具调用
-    tool_calls = getattr(latest_msg, "tool_calls", []) or []
+    # ——检查索引边界——
+    if not plan_steps or current_step_index >= len(plan_steps):
+        if PRINT_SWITCH:
+            logger.warning(f"[agent_choice] 步骤索引超出范围 → 进入总结")
+        return "think-answer"
 
-    # 有工具调用 → 必须先执行工具
+    # ——检查是否有工具调用（最高优先级）——
+    msgs = state["messages"]
+    latest_msg = msgs[-1]
+    tool_calls = getattr(latest_msg, "tool_calls", []) or []
     if tool_calls:
+        # 有工具调用 → 必须先执行工具
+        if PRINT_SWITCH:
+            print(f"[agent_choice] 状态机：{step_status} + 有工具调用 → 执行工具")
         return "use_tools"
 
-    # 一定是先判断工具调用，再判断计划完成
-    if not plan_steps or not plan_step_tools:
-        return "think-answer"
+    # ——没有工具调用，根据状态决定——
+    if step_status == "step_done":
+        # 当前步骤完成，继续执行下一步
+        if PRINT_SWITCH:
+            print(f"[agent_choice] 状态机：step_done → 继续执行步骤 [{current_step_index + 1}/{len(plan_steps)}]")
+        return "self-think"
 
+    if step_status == "continue":
+        # 当前步骤未完成，继续思考当前步骤
+        if PRINT_SWITCH:
+            print(f"[agent_choice] 状态机：continue → 继续当前步骤 [{current_step_index + 1}/{len(plan_steps)}]")
+        return "self-think"
+
+    # 默认继续执行
     return "self-think"
 
 def decision_choice(state: State):
@@ -530,7 +697,8 @@ if __name__ == "__main__":
         # 1. 使用async with管理数据库连接
         async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
             await store.setup()
-            print("PostgreSQL Store 数据初始化成功!")
+            print("Postgresql Store 数据初始化成功!")
+
             config = {"configurable": {"thread_id": "002", "user_id": "user_003"}}
             # 2. 构建Graph
             agent = await create_graph(store,config)
@@ -545,25 +713,33 @@ if __name__ == "__main__":
             # 4. 执行Graph
             result = await agent.ainvoke(init_state, config=config)
             final_msg = result["messages"][-1]
-            print(result)
             print("模型回答：", final_msg.content)
-            print(120*'=')
-            test_state = {
+            print(100*'=')
+            test_state1 = {
             "messages": [
-                HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
-                                     "四川大学望江校区的路线(坐地铁和步行)？并且预计我的方式到达川大的时间是本地时间的几点几分呢？")
+                # HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
+                #                      "四川大学望江校区的路线(坐地铁和步行)？如果我现在出发，那我后续到达川大的时间预计是多少呢?")
+                HumanMessage(content="请问你可以帮我查询下知识库里:慢羊羊给懒羊羊四个的重要道具是什么呢?")
                 ]
             }
-            result = await agent.ainvoke(test_state, config=config)
+            result = await agent.ainvoke(test_state1, config=config)
             final_msg2 = result["messages"][-1]
             print("模型回答：", final_msg2.content)
-            print(result)
+            test_state2 = {
+                "messages": [
+                    # HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
+                    #                      "四川大学望江校区的路线(坐地铁和步行)？如果我现在出发，那我后续到达川大的时间预计是多少呢?")
+                    HumanMessage(content="请问你可以帮我查询下知识库里:暗太狼是什么？")
+                ]
+
+            }
+            print(100 * '=')
+            result = await agent.ainvoke(test_state2, config=config)
+            final_msg3 = result["messages"][-1]
+            print("模型回答：", final_msg3.content)
             final_token = result.get("usages")["total"]
             print("总的token用量:", final_token)
     asyncio.run(test(), loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()))
-
-
-
 
 
 

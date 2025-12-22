@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any, Union
 from langchain_openai import ChatOpenAI
-from langchain_core.outputs import ChatResult, ChatGeneration
+from langchain_core.outputs import ChatResult
 from pydantic import Field
 
 

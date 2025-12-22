@@ -11,7 +11,11 @@ VideoCode/
 *.pdf
 *.csv
 *.egg-info/
-comments/
-
+# mcp备份
+backup/
+# 忽略的日志文件
 *.log
 uv.lock
+# 向量数据库信息
+chroma_db/
+
