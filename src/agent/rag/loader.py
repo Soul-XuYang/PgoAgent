@@ -178,13 +178,18 @@ class DocumentLoader:
 
 
 def get_files_in_folder(folder_path: str) -> Tuple[List[str], List[str]]:
+    """
+    获取文件夹中的文件列表
+    :param folder_path: 文件夹路径
+    :return: 文件列表，文件扩展名列表
+    """
     files = []
     suffix = []
-    folder = Path(folder_path)
+    folder = Path(folder_path) # 对应路径的文件夹
     if not folder.exists():
         raise FileNotFoundError(f"文件夹不存在：{folder_path}")
 
-    for file_path in folder.iterdir():
+    for file_path in folder.iterdir(): # 遍历文件夹中的文件
         if file_path.is_file():
             files.append(file_path.name)
             suffix.append(file_path.suffix.lower().lstrip('.'))

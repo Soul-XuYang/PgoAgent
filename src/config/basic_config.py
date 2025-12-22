@@ -15,7 +15,7 @@ EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY")
 # Rerank模型
 RERANK_MODEL_URL= os.getenv("RERANK_MODEL_URL")
 RERANK_API_KEY = os.getenv("RERANK_API_KEY")
-PRINT_SWITCH = False # DEBUG各个节点的token数
+PRINT_SWITCH = False# DEBUG各个节点的token数
 # 路径设置
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent # 用相对路径导出绝对路径
 FILE_PATH = str(PROJECT_ROOT / "file")
@@ -73,7 +73,7 @@ MODEL_MAX_INPUT = {
 }
 
 # 向量数据库的配置参数
-DB_PATH = "../../" + "chroma_db"
+DB_PATH =  str(PROJECT_ROOT / "chroma_db")
 COLLECTION_NAME = "my_vector"
 
 

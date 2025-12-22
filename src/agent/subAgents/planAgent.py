@@ -4,7 +4,7 @@ from langgraph.constants import START, END
 from langgraph.graph import add_messages, StateGraph
 from pydantic import BaseModel, Field
 from agent.my_llm import llm
-from agent.state_utils import get_latest_HumanMessage
+from .state_utils import get_latest_HumanMessage
 from utils import extract_token_usage
 from config.basic_config import PRINT_SWITCH
 
@@ -32,7 +32,7 @@ class PlanStep(BaseModel):
     capability: Literal[
         "none",
         "search",
-        "rag",
+        "rag_retrieve",
         "file_read",
         "file_write",
         "list_dir",
@@ -60,38 +60,37 @@ class Planner(BaseModel):
         description="当前任务是否需要从知识库 / 向量库中检索信息（RAG）。",
     )
 PLANNER_PROMPT = """
-你是任务规划助手，根据用户请求输出执行步骤计划。
+你是任务规划助手，只用最后一条用户消息规划执行步骤。
 
-输出结构（自动解析）：
+输出结构：
 - plan_steps：步骤列表，每个包含：
   - description：该步骤要做什么（自然语言）
   - capability：能力类型，选择其一：
     • none：纯思考/文本生成-无需工具
     • list_dir:列出文件及遍历文件目录
     • search：本地文件搜索
-    • rag：知识库检索，获取文库内容，共三个工具：rag_decide_strategy、rag_retrieve、rag_rewrite_query
+    • rag_retrieve：知识库检索执行（LLM会根据问题自动选择合适的检索策略和参数，失败时可调用rag_rewrite_query重写query后重试）
     • file_read/file_write/create_file/delete_file：文件操作
-    • get_time：时间查询
-    • code_exec：代码执行
-    • external_mcp：外部工具，如果现有工具无法完成则使用mcp工具，如网络搜索、路线规划、网络爬取等等
-
-- requires_rag：任意步骤需要rag时设为true
-
+    • get_time：时间查询（获取当前时间、日期等实时信息）
+    • calculate：计算操作
+    • code_exec：shell代码执行
+    • external_mcp：外部工具，如网络搜索、路线规划等
 要求：
-1. 仅根据用户最后一次消息规划
-2. 步骤清晰原子化（如：列目录→读文件→整理→回答）
-3. 不提具体工具名，仅用capability表示能力
+1. 步骤清晰原子化（如：列目录→读文件→整理→回答）
+2. 不提具体工具名，仅用capability表示能力
+3. RAG检索直接使用rag_retrieve，失败则使用rag_rewrite_query重写query后重试rag_retrieve
 4. 仅输出结构化数据
 """
 CAPABILITY_TO_TOOLS = {
     "list_dir": ["list_dir", "current_workdir"],
     "file_read": ["read_file", "read_json", "search_in_file"],
     "file_write": ["write_file", "write_json", "create_file", "append_file"],
-    "get_time": ["get_time"],
+    "get_time": ["get_time","get_date"],
     "search": ["search_in_file"],
-    "rag": ["rag_decide_strategy", "rag_retrieve", "rag_rewrite_query"], # 分解成三步使用
-    "code_exec": ["code_exec"],
-    "external_mcp": [],  # MCP 工具动态加载
+    "rag_retrieve": ["rag_retrieve", "rag_rewrite_query"],
+    "calculate":["date_calculate",'calculator'],
+    "code_exec": ["shell_exec"],
+    "external_mcp": [],
     "none": []
 }
 

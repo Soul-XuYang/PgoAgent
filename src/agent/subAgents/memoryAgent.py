@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, add_messages
 from langgraph.store.postgres import  AsyncPostgresStore
 from pydantic import BaseModel
 from config import PRINT_SWITCH,DATABASE_DSN
-from agent.state_utils import get_latest_HumanMessage, has_obvious_profile_info
+from .state_utils import get_latest_HumanMessage, has_obvious_profile_info
 from agent.my_llm import llm
 from utils import extract_token_usage
 
