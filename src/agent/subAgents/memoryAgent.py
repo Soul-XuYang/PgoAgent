@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from config import PRINT_SWITCH,DATABASE_DSN
 from .state_utils import get_latest_HumanMessage, has_obvious_profile_info
 from agent.my_llm import llm
-from utils import extract_token_usage
+from agent.utils import extract_token_usage
 
 key = "profile"  # 你可以改名，比如 "user_memory"
 # 用户的画像 - 这个类就获得了数据验证、类型转换和序列化等强大功能。
@@ -25,7 +25,7 @@ CREATE_MEMORY_PROMPT = """你正在为单个用户整理一份长期用户画像
 请严格按照下面的要求更新用户信息：
 1. 仔细阅读下面给出的最新聊天记录（包括用户和助手的发言）
 2. 只提取"由用户明确说出的"关于 TA 自己的各种客观事实信息，例如：
-   - 基本情况（职业、角色、地区、行业、使用场景等）
+   - 基本情况（姓名、职业、角色、地区、行业、使用场景等）
    - 长期、稳定的偏好（例如：经常使用的语言、喜欢/不喜欢的风格）
    - 明确的长期目标（例如：准备考什么证、长期学习什么）
 3. 将这些新信息与"当前已保存的用户信息"进行合并，去掉重复内容
@@ -103,8 +103,6 @@ async def update_user_memory_with_messages(store: AsyncPostgresStore, user_id: s
     """
     try:
         existing_memory = await get_user_memory(store, user_id)  # 获取
-        print(f"Debug - 现有记忆: {existing_memory}")  # 调试信息-后续要删除
-
         # 将消息列表转换为字符串
         messages_str = "\n".join([f"{msg.__class__.__name__}: {msg.content}" for msg in query])
 

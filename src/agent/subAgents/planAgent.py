@@ -5,18 +5,17 @@ from langgraph.graph import add_messages, StateGraph
 from pydantic import BaseModel, Field
 from agent.my_llm import llm
 from .state_utils import get_latest_HumanMessage
-from utils import extract_token_usage
+from agent.utils import extract_token_usage
 from config.basic_config import PRINT_SWITCH
 
 class PlannerState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     usages: dict[str, int]
     context: NotRequired[dict[str, Any]]
-    requires_rag :NotRequired[bool]
     # 工具补充
     plan_steps: NotRequired[List[str]]
     plan_step_tools: NotRequired[List[str]]
-    origin_plan_steps: NotRequired[List[str]]
+
 
 
 class PlanStep(BaseModel):
@@ -27,7 +26,7 @@ class PlanStep(BaseModel):
     """
     description: str = Field(
         ...,
-        description="该步骤要做的事情，用自然语言简述。",
+        description="本步骤要做的事情，用自然语言简述。",
     )
     capability: Literal[
         "none",
@@ -50,15 +49,14 @@ class Planner(BaseModel):
     """
     LLM 规划输出：
     - plan_steps：步骤列表，每个步骤包含 description + capability
-    - requires_rag：整体任务是否需要 RAG
     """
+    # 定义 plan_steps 字段，类型为 PlanStep 列表
+    # 默认值为空列表
+    # 字段描述说明这是为当前用户请求规划出的执行步骤，步骤按从上到下的顺序执行
     plan_steps: List[PlanStep] = Field(
         description="为当前用户请求规划出的执行步骤，从上到下按顺序执行。"
     )
-    requires_rag: bool = Field(
-        default=False,
-        description="当前任务是否需要从知识库 / 向量库中检索信息（RAG）。",
-    )
+
 PLANNER_PROMPT = """
 你是任务规划助手，只用最后一条用户消息规划执行步骤。
 
@@ -70,10 +68,11 @@ PLANNER_PROMPT = """
     • list_dir:列出文件及遍历文件目录
     • search：本地文件搜索
     • rag_retrieve：知识库检索执行（LLM会根据问题自动选择合适的检索策略和参数，失败时可调用rag_rewrite_query重写query后重试）
-    • file_read/file_write/create_file/delete_file：文件操作
+    • read_file/write_file/create_file/delete_file：文件操作，其中文件中追加内容算入write_file
     • get_time：时间查询（获取当前时间、日期等实时信息）
     • calculate：计算操作
-    • code_exec：shell代码执行
+    • code_exec：shell代码执行,以及相关代码的执行
+    • validator：校验操作
     • external_mcp：外部工具，如网络搜索、路线规划等
 要求：
 1. 步骤清晰原子化（如：列目录→读文件→整理→回答）
@@ -83,14 +82,17 @@ PLANNER_PROMPT = """
 """
 CAPABILITY_TO_TOOLS = {
     "list_dir": ["list_dir", "current_workdir"],
-    "file_read": ["read_file", "read_json", "search_in_file"],
-    "file_write": ["write_file", "write_json", "create_file", "append_file"],
+    "read_file": ["read_file", "read_json", "search_in_file"],
+    "write_file": ["write_file", "write_json", "create_file", "append_file"],
+    "create_file":["create_file"],
+    "delete_file": ["delete_file"],
     "get_time": ["get_time","get_date"],
     "search": ["search_in_file"],
     "rag_retrieve": ["rag_retrieve", "rag_rewrite_query"],
     "calculate":["date_calculate",'calculator'],
     "code_exec": ["shell_exec"],
     "external_mcp": [],
+    "validator": ["validate_email"],
     "none": []
 }
 
@@ -130,7 +132,6 @@ async def planner_node(state: PlannerState) -> PlannerState:
                     "usages": {"input": 0, "output": 0, "total": 0},
                     "plan_steps": ["直接回答用户问题"],
                     "plan_step_tools": ["none"],
-                    "requires_rag": False
                 }
     # 如果所有重试都失败，使用最后一次的结果-作者失败
     if parsed is None or not validate_plan(parsed.plan_steps):
@@ -139,7 +140,6 @@ async def planner_node(state: PlannerState) -> PlannerState:
             "usages": {"input": 0, "output": 0, "total": 0},
             "plan_steps": ["分析用户问题并回答"],
             "plan_step_tools": ["none"],
-            "requires_rag": False
         }
 
     raw = response["raw"]
@@ -155,8 +155,6 @@ async def planner_node(state: PlannerState) -> PlannerState:
         "usages": usage_delta,
         "plan_steps":plan_steps_text ,
         "plan_step_tools": plan_step_tools,
-        "origin_plan_steps":plan_step_tools,
-        "requires_rag": parsed.requires_rag
     }
 def validate_plan(steps: List[PlanStep]) -> bool:
     if not steps:
@@ -191,7 +189,6 @@ if __name__ == "__main__":
         print(f"✅ 步骤数: {len(result_1['plan_steps'])}")
         print(f"   步骤: {result_1['plan_steps']}")
         print(f"   工具: {result_1['plan_step_tools']}")
-        print(f"   需要RAG: {result_1['requires_rag']}")
         print(f"   Token消耗: {result_1['usages']}")
         # 测试用例2: 文件操作任务
         print("\n【测试2】文件操作任务")
@@ -205,7 +202,6 @@ if __name__ == "__main__":
         print(f"✅ 步骤数: {len(result_2['plan_steps'])}")
         print(f"   步骤: {result_2['plan_steps']}")
         print(f"   工具: {result_2['plan_step_tools']}")
-        print(f"   需要RAG: {result_2['requires_rag']}")
         print(f"   Token消耗: {result_2['usages']}")
 
         total_tokens = sum([
@@ -237,7 +233,6 @@ if __name__ == "__main__":
         print(f"\n✅ Graph执行完成！")
         print(f"   规划步骤: {result.get('plan_steps')}")
         print(f"   需要工具: {result.get('plan_step_tools')}")
-        print(f"   需要RAG: {result.get('requires_rag')}")
         print(f"   Token消耗: {result.get('usages')}")
     # 运行所有测试
     async def run_all_tests():

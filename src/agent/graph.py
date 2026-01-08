@@ -5,7 +5,6 @@ import uuid
 from typing import Annotated, List, TypedDict, NotRequired, Literal
 from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.constants import END, START
 from langgraph.graph import add_messages, StateGraph
@@ -21,23 +20,30 @@ from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里�
 from agent.tools import BLACK_LIST
 from agent.subAgents.planAgent import planner_graph,CAPABILITY_TO_TOOLS
 from my_llm import llm
-from utils import extract_token_usage,accumulate_usage
+from agent.utils import extract_token_usage,accumulate_usage
 # 内存形式
-from langgraph.checkpoint.memory import MemorySaver
 from agent.subAgents.memoryAgent import memory_graph, get_user_memory
 
 # 参数设置-在配置文件已设置
 input_limit = 8192
 max_tool_output_chars = 500
 MAX_TOOL_RESULT_CHARS = 500
+latest_chat_size = 16
 
-# 主图中 State 定义处
+def sliding_window_add(window: list[BaseMessage], data: BaseMessage, window_length: int = latest_chat_size) -> list[BaseMessage]:
+    if len(window) >= window_length:
+        window.pop(0)  # 弹出第一个元素
+    window.append(data)
+    return window
+# 主图中 State 定义
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     usages: Annotated[dict[str, int], accumulate_usage]
-    context: NotRequired[dict[str]] # 上下文，这里更多和对话相连-注重于chat功能
+    context: NotRequired[dict[str]] # 上下文-chat功能
     requires_agent: NotRequired[bool]
-    requires_rag: NotRequired[bool]
+
+    # 对话记录
+    conversation_pairs: NotRequired[list[BaseMessage]] # 目前还是用list存，一是本身长度不长二是内存小一些
     # 计划步骤
     plan_steps: NotRequired[List[str]]
     plan_step_tools: NotRequired[List[str]]
@@ -53,13 +59,11 @@ class State(TypedDict):
 # 不断总结以及裁剪信息
 async def summarization_node(
         state: State,
-        max_tokens: int = 4096,
+        max_tokens: int = input_limit,
         max_summary_tokens: int = 1024,
         topK: int = 6,
 ) -> State:
     # 初始化
-    state["requires_agent"] = False
-    state["requires_rag"] = False
     state["plan_step_tools"] = []
     state["plan_steps"] = []
     state["current_plan_step"] = 0
@@ -67,7 +71,10 @@ async def summarization_node(
     state["agent_loop_count"] = 0  # 重置循环计数器
     state["step_status"] = "continue"# 初始化状态
     state["tool_attempts"] = 0  # 初始化RAG尝试次数
-    # --------------------------------------------
+    # 确保对话记录存在
+    if "conversation_pairs" not in state:
+        state["conversation_pairs"] = []
+    # 构建base_node节点
     base_node = SummarizationNode(
         token_counter=count_tokens_approximately,
         model=llm,
@@ -79,22 +86,28 @@ async def summarization_node(
     # ★ 确保 context 存在并保存用户最新提问
     ctx = state.setdefault("context", {})
     msgs = state.get("messages", [])
-    # 从后向前查找最新的用户提问
+    # 从后向前查找最新的用户提问-必须走的一条路
     for msg in reversed(msgs):
         if isinstance(msg, HumanMessage):
-            ctx["current_user_question"] = msg.content
-            break
+            # 只添加非空的用户消息，避免空消息导致 API 调用失败-易错点
+            msg_content = getattr(msg, "content", "") or ""
+            if msg_content.strip():
+                state["conversation_pairs"] = sliding_window_add(state["conversation_pairs"], msg)
+                ctx["current_user_question"] = msg.content
+                break
     total_tokens = count_tokens_approximately(state["messages"])
-    if total_tokens <= max_tokens or len(state["messages"]) < 10:
+
+    if total_tokens <= max_tokens*0.6 and len(state["conversation_pairs"]) < latest_chat_size:
         return state
 
-    new_state = await base_node.ainvoke(state)  # 注意这里还是
+    new_state = await base_node.ainvoke(state)  # 注意这里还是对整体的msg进行总结
     summary_msg = new_state["messages"][0]
 
     state["context"]["summary"] = summary_msg.content
 
     tail = state["messages"][-topK:]
     state["messages"] = [summary_msg] + tail  # 总结+裁剪信息
+
     return state
 
 # 工具结果判断函数
@@ -203,7 +216,7 @@ class ToolNode:
                     if allowed_tools:
                         executed_messages = await self._execute_tool_calls(allowed_tools)
                         tool_messages.extend(executed_messages)
-                    inc = 1 if allowed_tools else 0 # 如果有合法工具执行，则attempts+1,以哦错
+                    inc = 1 if allowed_tools else 0 # 如果有合法工具执行，则attempts+1
                     return {
                         "messages": tool_messages,
                         "usages": {},
@@ -260,13 +273,53 @@ class ToolNode:
         except Exception as e:
             raise RuntimeError(f"并发执行调用工具失败: {e}") from e
 
+# 依据结果生成计划摘要从而尽量减少token    
+def build_smart_plan_summary(
+    plan_steps: List[str], 
+    tool_results: List[ToolMessage],
+) -> str:
+    """根据工具结果智能构建计划摘要"""
+    if not plan_steps:
+        return "无明确计划"
+    
+    total_steps = len(plan_steps)
+    
+    # 分析工具结果，判断任务复杂度
+    tool_names = {msg.name for msg in tool_results}
+    has_multiple_tools = len(tool_names) > 1
+    has_rag = "rag_retrieve" in tool_names
+    
+    if total_steps <= 3:
+        # 简单任务：全部传递
+        return " → ".join(plan_steps)
+    
+    # 复杂任务：智能摘要
+    first_step = plan_steps[0]  # 保留目标
+    last_steps = plan_steps[-2:]  # 保留当前状态
+    
+    if has_rag and has_multiple_tools:
+        # RAG + 多工具：可能是复杂查询任务，需要更多上下文
+        if total_steps <= 5:
+            return " → ".join(plan_steps)
+        else:
+            # 保留首步、中间关键步、最后2步
+            mid_idx = total_steps // 2
+            return f"{first_step} → ... → {plan_steps[mid_idx]} → ... → {' → '.join(last_steps)}"
+    else:
+        # 简单任务：只保留首尾
+        if total_steps <= 6:
+            return f"{first_step} → ... → {' → '.join(last_steps)}"
+        else:
+            return f"{first_step} → [共{total_steps}步] → {' → '.join(last_steps)}"
+
+
 
 async def answer_thinking_node(state: State) -> State:
     msgs = state.get("messages", [])
     origin_plan_steps = state.get("plan_steps", [])
     ctx = state.get("context", {})
     fallback_question = ctx.get("current_user_question", "用户问题缺失")
-
+    current_step_index = state.get("current_plan_step",0)
     # 收集所有 ToolMessage（工具执行结果）
     K=3
     tool_results = []
@@ -285,7 +338,15 @@ async def answer_thinking_node(state: State) -> State:
                 break
         if isinstance(msg, HumanMessage) and msg.content == fallback_question:
             break
-
+    # 这里对步骤进行裁减
+    if origin_plan_steps:
+        plan_summary = build_smart_plan_summary(
+            origin_plan_steps, 
+            tool_results,
+    )
+    else:
+        plan_summary = "无明确计划"
+    # 生成最后的只要
     execution_log = f"工具调用结果摘要（已自动精简）：\n"
     if tool_results:
         for i, tool_msg in enumerate(tool_results, 1):
@@ -301,17 +362,15 @@ async def answer_thinking_node(state: State) -> State:
 
     if has_rag_result:
         base_requirements = (
-            "- 关于知识库的内容请用rag_retrieve返回的内容回答\n"
-            "- 禁止编造、推测、补充任何未在知识库中出现的信息\n"
+            "- 请仅用rag查询知识库的内容,禁止编造、推测、补充任何未在知识库中出现的信息\n"
             "- 如果知识库中未找到相关信息，明确告知用户\n"
         )
     # 依据rag的使用进行替换
     question = (
-        f"用户提问: {fallback_question}\n"
-        f"解决用户问题的计划: {origin_plan_steps}\n\n"
-        f"{execution_log}\n"
-        "请根据上述工具返回的实际数据，详细、准确地回答用户的问题。\n"
-        f"要求:\n{base_requirements}"
+        f"问题: {fallback_question}\n"
+        f"计划: {plan_summary}\n"  # 只传递关键步骤
+        f"工具结果:\n{execution_log}\n"
+        f"要求: {base_requirements}"
     )
     msgs_for_summary = [SystemMessage(content=question)]
     # 强制裁剪到安全范围
@@ -329,12 +388,89 @@ async def answer_thinking_node(state: State) -> State:
     usage_delta = extract_token_usage(response)  # 获取此次对话的token使用清空
     if PRINT_SWITCH:
         print(f"[agent_node-总结]的Token增量: {usage_delta}")
+    conversation_pairs = state.get("conversation_pairs", [])
+    response_pairs = sliding_window_add(conversation_pairs, response)
     return {
         "messages": [response],
-        "usages": usage_delta
+        "usages": usage_delta,
+        "conversation_pairs": response_pairs,
     }
 
-async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=2):
+
+def collect_recent_tool_pairs(messages: List[BaseMessage],
+                user_question: str,
+                max_pairs: int = 1) -> List[BaseMessage]:
+    """
+    一次性遍历收集最近的 AIMessage-ToolMessage 配对(截止在本次对话前)
+    返回格式：[AIMessage, ToolMessage1, ToolMessage2, ...]
+    """
+    result = []
+    collected_pairs = 0
+    i = len(messages) - 1
+
+    # 首先找找到用户最新问题的位置
+    question_boundary = -1
+    for idx in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[idx], HumanMessage) and messages[idx].content == user_question:
+            question_boundary = idx
+            break
+
+    # 从后往前，一次性收集配对
+    while i >= question_boundary and collected_pairs < max_pairs:
+        msg = messages[i]
+
+        # 找到 AIMessage with tool_calls
+        if isinstance(msg, AIMessage) and getattr(msg, 'tool_calls', None):
+            tool_call_ids = {tc['id'] for tc in msg.tool_calls}
+            tool_messages = []
+
+            # 向后查找对应的 ToolMessage（只查一次）
+            j = i + 1
+            while j < len(messages) and len(tool_call_ids) > 0:
+                if isinstance(messages[j], ToolMessage):
+                    if messages[j].tool_call_id in tool_call_ids:
+                        # 按 token 截断，而非字符
+                        tool_msg = truncate_tool_message_by_tokens(
+                            messages[j],
+                            max_tokens=500
+                        )
+                        tool_messages.append(tool_msg)
+                        tool_call_ids.discard(messages[j].tool_call_id)
+                elif isinstance(messages[j], AIMessage):
+                    break  # 遇到下一个 AI 响应，停止
+                j += 1
+
+            # 只有当所有 tool_calls 都有响应时才添加
+            if len(tool_call_ids) == 0:
+                result.insert(0, msg)  # AIMessage
+                result[1:1] = tool_messages  # ToolMessages
+                collected_pairs += 1
+
+        i -= 1
+
+    return result
+
+
+def truncate_tool_message_by_tokens(tool_msg: ToolMessage, max_tokens: int = 500,scale:float = 0.95) -> ToolMessage:
+    """根据 token 数量截断，而非字符数"""
+    content = tool_msg.content or "" # 获取其内容
+    current_tokens = count_tokens_approximately([SystemMessage(content=content)]) # 计算当前的token数量
+
+    if current_tokens <= max_tokens:
+        return tool_msg
+
+    # 二分查找合适的截断点（简化版：按比例截断）
+    ratio = max_tokens / current_tokens # 获得比例
+    truncated_length = int(len(content) * ratio * scale)  # 留5%余量，剩余95%作为喂给模型的长度
+
+    truncated_content = content[:truncated_length] + f"\n\n⚠️ [输出已截断，保留约{max_tokens} tokens]" # 截断末尾的长度
+
+    return ToolMessage(
+        content=truncated_content,
+        name=tool_msg.name,
+        tool_call_id=tool_msg.tool_call_id
+    )
+async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpointer=None):
     mcp_tools= await get_mcp_tools()
     all_tools=mcp_tools + LOCAL_TOOLS
     # 对话节点
@@ -365,10 +501,9 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
             relevant_tools = []  # none 或者未知 capability，不绑定工具
         if "external_mcp" in current_capability and mcp_tools: # 绑定MCP
             relevant_tools.extend(mcp_tools)
-
         # 创建系统提示
         ctx = state.get("context", {})
-        user_question = ctx.get("current_user_question", "") # 上下文内容
+        user_question = ctx.get("current_user_question", "")
         system_content = f"问题: {user_question}\n当前步骤: {current_step}\n"
         if current_capability == "rag_retrieve":
             system_content += (
@@ -376,58 +511,18 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
                 "2.若返回为空/不相关：先 rag_rewrite_query，再 rag_retrieve，最多重试 2 次。\n"
                 "3.得到检索结果后直接回答，禁止臆测。"
             )
+        elif current_capability in {"get_time", "calculate"}:
+            system_content += "直接调用工具获取结果，无需额外说明。"
         elif relevant_tools:
             system_content += "需要使用工具完成当前步骤。"
             system_content += "⚠️ 重要提示：每个工具只需调用一次，获得结果后立即停止，不要重复调用。"
         else:
             system_content += "\n无需工具，请直接回答。"
         msgs_for_llm = [SystemMessage(content=system_content)]
-
-        if len(msgs) >= 2:     # 从后往前查找最近的 AIMessage 和 ToolMessage 配对
-            temp_history = []
-            i = len(msgs) - 1
-            collected_pairs = 0
-            max_pairs = 1  # 最多保留1对历史
-            last_human_question_index = -1
-            for idx in range(len(msgs) - 1, -1, -1):
-                if isinstance(msgs[idx], HumanMessage) and msgs[idx].content == user_question: # 当前对话的消息
-                    last_human_question_index = idx # 获取最近
-                    break
-            while i >= 0 and collected_pairs < max_pairs:
-                msg = msgs[i]
-                # 找到 AIMessage with tool_calls
-                if i < last_human_question_index:
-                    break
-                if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
-                    # 收集这个 AIMessage 的所有 tool_call_ids
-                    tool_call_ids = {tc['id'] for tc in msg.tool_calls}
-                    tool_messages = []
-
-                    # 向后查找对应的 ToolMessage
-                    for j in range(i + 1, len(msgs)): # 对应的想后找到tool_msg
-                        if isinstance(msgs[j], ToolMessage):
-                            if msgs[j].tool_call_id in tool_call_ids:
-                                tool_msg = msgs[j]
-                                if len(tool_msg.content) > max_tool_output_chars:
-                                    tool_msg = ToolMessage( # ToolMessage的必要信息-这三个必不可少
-                                        content=f"{tool_msg.content[:max_tool_output_chars]}\n\n⚠️ [输出已截断,只保留{max_tool_output_chars}]",
-                                        name=tool_msg.name,
-                                        tool_call_id=tool_msg.tool_call_id
-                                    )
-                                tool_messages.append(tool_msg)
-                                tool_call_ids.discard(msgs[j].tool_call_id)
-                        elif isinstance(msgs[j], AIMessage):
-                            # 遇到下一个 AIMessage 停止
-                            break
-
-                    # 只有当所有 tool_calls 都有响应时才添加
-                    if len(tool_call_ids) == 0:
-                        temp_history.insert(0, msg)
-                        temp_history[1:1] = tool_messages  # 在 AIMessage 后插入 ToolMessages
-                        collected_pairs += 1
-                i -= 1
-            # 添加到消息列表
+        if len(msgs) >= 2:
+            temp_history = collect_recent_tool_pairs(msgs, user_question, max_pairs=1) # 收集当前的临时信息
             msgs_for_llm.extend(temp_history)
+        # 这个是对整体消息的裁剪
         total_tokens = count_tokens_approximately(msgs_for_llm)
         # 对每次工具的执行进行裁剪
         if total_tokens > input_limit:
@@ -475,7 +570,7 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
         else:
             llm_run = llm
         # 选用工具
-        response: BaseMessage = await llm_run.ainvoke(msgs_for_llm)
+        response: BaseMessage = await llm_run.ainvoke(msgs_for_llm) # 存有的是工具调用信息
         usage_delta = extract_token_usage(response)
         if PRINT_SWITCH:
             logger.info(system_content)
@@ -516,12 +611,14 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
             user_id = configurable.get("user_id", "anonymous")
             user_profile = await get_user_memory(store, user_id)
         injected_msgs = []
+        injected_msgs.append(SystemMessage(content="你现在是一个名为 PgoAgent 的智能助手，由 PgoAgent 项目开发。你目前正在和用户进行对话，请根据用户的问题和上下文，给出合适的回答。"))
         # 注入用户画像，让回答更贴合用户，但不要直接给用户看
-        if user_profile:
+        if user_profile and user_profile != "空":
             profile_summary = str(user_profile)[:300] + "..." if len(str(user_profile)) > 300 else str(user_profile)
             injected_msgs.append(
                 SystemMessage(
                     content=(
+
                         f"用户画像（参考）：{profile_summary}\n"
                         "提示：个性化回答，不要复述画像。"
                     )
@@ -533,8 +630,19 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
                     content=f"以下内容是之前对话的压缩摘要，仅供模型理解：\n{summary}"
                 )
             )
+        injected_msgs.append(SystemMessage(content=f"以下为用户最近的{latest_chat_size}次对话:\n"))
+        conversation_pairs = state.get("conversation_pairs", [])
+        # 过滤掉空的 user 消息，避免 API 调用失败
+        filtered_pairs = []
+        for msg in conversation_pairs:
+            if isinstance(msg, HumanMessage):
+                msg_content = getattr(msg, "content", "") or ""
+                if msg_content.strip():
+                    filtered_pairs.append(msg)
+            else:
+                filtered_pairs.append(msg)
         # 再接上真实对话消息
-        msgs_for_llm = injected_msgs + msgs
+        msgs_for_llm = injected_msgs + filtered_pairs
         # 对话裁剪
         total_tokens = count_tokens_approximately(msgs_for_llm)
         if total_tokens > input_limit:
@@ -556,17 +664,17 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
                     trimmed = [SystemMessage(content="历史已裁剪，请继续对话。")]
 
             msgs_for_llm = trimmed
-
         response: BaseMessage = await llm.ainvoke(msgs_for_llm)
         usage_delta = extract_token_usage(response)
         if PRINT_SWITCH:
             print(f"[chat_node]Token增量{usage_delta}")
         if getattr(response, "id", None) is None:
             response.id = str(uuid.uuid4())
-
+        response_pairs = sliding_window_add(conversation_pairs, response)
         return {
             "messages": [response],  # 把模型回答追加到原始消息后
             "usages": usage_delta,
+            "conversation_pairs": response_pairs,
         }
     #========正式开始构建图========
     # 构建图-一定要按顺序添加
@@ -603,9 +711,12 @@ async def create_graph(store:Store,config: RunnableConfig,max_tool_attempts:int=
     builder.add_edge("tools_node", "agent_node")
     builder.add_edge("answer-thinking", "long_memory_node")
     builder.add_edge("long_memory_node", END)
+    # ===== 编译 =====
+    if checkpointer is None: # 如果不传入默认使用内存保存
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
 
-    memory = MemorySaver()
-    graph = builder.compile(checkpointer=memory)
+    graph = builder.compile(checkpointer=checkpointer)
     return graph
 # ===== 路由即条件函数-langgraph里推荐路由函数只做判断别的都不做 =====
 def agent_choice(state: State):
@@ -727,8 +838,7 @@ if __name__ == "__main__":
             print("模型回答：", final_msg2.content)
             test_state2 = {
                 "messages": [
-                    # HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
-                    #                      "四川大学望江校区的路线(坐地铁和步行)？如果我现在出发，那我后续到达川大的时间预计是多少呢?")
+
                     HumanMessage(content="请问你可以帮我查询下知识库里:暗太狼是什么？")
                 ]
 

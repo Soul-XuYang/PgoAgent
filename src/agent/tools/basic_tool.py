@@ -1,29 +1,27 @@
 import math
 import re
-import datetime
 import statistics
-from datetime import datetime as dt
+from datetime import datetime, timedelta, date
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
-from datetime import datetime, timedelta
-
-
-
 
 def get_datetime():
-    current_date = datetime.date.today()
-    year = current_date.year  # 2025
-    month = current_date.month  # 11
-    day = current_date.day  # 30
+    current_date = date.today()
+    year = current_date.year
+    month = current_date.month
+    day = current_date.day
     return f"{year}年{month}月{day}日"
 
 @tool('get_date')
 def get_date()->str:
-    """获取当前时间的日期
+    """获取当前日期（年月日）
     Returns:
-        str: 返回当前的日期信息(中文描述)
+        str: 返回当前的日期信息(中文描述)，格式如"2025年1月8日"
     Example:
-        "get_date.run("") 返回2025年11月30日"
+        get_date() → "2025年1月8日"
+    Note:
+        - 此工具用于获取今天的日期
+        - 不要与 get_data（获取数据）混淆
     """
     return get_datetime()
 
@@ -35,12 +33,12 @@ def get_time() -> str:
     Example:
         例如:get_time.run() → "14:30"
     """
-    now = dt.now()
+    now = datetime.now()  # 修复：使用 datetime.now() 而不是 dt.now()
     current_time = now.strftime("%H:%M")
     return current_time
 
 @tool("date_calculate")
-def date_calculate(base_date: Optional[str] = None, days_diff: int = 0) -> str: # 日期计算函数-base_date可以为none或者str
+def date_calculate(base_date: Optional[str] = None, days_diff: int = 0) -> str:
     """对日期进行加减计算（默认基于当前日期）
     Args:
         base_date: 基准日期（可选，格式如「2025-12-01」，不传入则是默认当前日期）
@@ -52,10 +50,10 @@ def date_calculate(base_date: Optional[str] = None, days_diff: int = 0) -> str: 
         date_calculate.run(days=-1) → "2025年11月30日"
     """
     if base_date is not None:
-        base = datetime.datetime.strptime(base_date, "%Y-%m-%d")
+        base = datetime.strptime(base_date, "%Y-%m-%d")  # 修复：使用 datetime.strptime
     else:
-        base = datetime.datetime.now() # 默认日期
-    target = base + datetime.timedelta(days=days_diff) # 计算真实的日期
+        base = datetime.now()  # 修复：使用 datetime.now()
+    target = base + timedelta(days=days_diff)  # 修复：使用 timedelta
     return target.strftime("%Y年%m月%d日")
 
 
