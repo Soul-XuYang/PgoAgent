@@ -8,3 +8,7 @@ This is a multi-agent processing system with long-term and short-term memory+mcp
 # 本地部署
 - **本地大模型**：本次项目使用的是在服务器上使用VLLM部署的大模型(可自己配置使用)，配置的命令行CLI如下:
 - **用户数据库** 使用docker镜像下载PostgresSQL并用其容器进行链接
+# 微调
+可见本文项目的的workflow图
+
+其中关于plan、decide和memory子图的用户画像的刻画这三个部分是针对特定的应用场景，可依据实际需求进行部分微调

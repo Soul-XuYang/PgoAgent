@@ -5,7 +5,7 @@ from langgraph.graph import add_messages, StateGraph
 from pydantic import BaseModel, Field
 from config.basic_config import PRINT_SWITCH
 from agent.my_llm import llm
-from utils import extract_token_usage
+from agent.utils import extract_token_usage
 
 DECISION_SYSTEM_PROMPT = """你是一个只负责“是否需要调用工具”的路由器。
 请严格按照下面规则设置 requires_agent：
@@ -30,8 +30,8 @@ class DecisionAgentState(TypedDict):
 class DecisionOutput(BaseModel):
     requires_agent: bool = Field(
         description="是否需要调用外部工具（如时间 / 搜索 / 文件 / 知识库等）。"
-            "只有在用户明确提出需要查询外部信息、访问文件、数据库等时，才设为 true。"
-            "不确定或者其它情况设置为 false。"
+            "只有在用户明确提出需要使用工具如文件管理、数据库、RAG查询、Web搜素等时，才设为 true。"
+            "不确定或者用户只是设置为 false。"
     )
 TRIGGER_KEYWORDS = [
     "时间", "日期", "现在几点", "今天", "明天", "昨天",

@@ -18,4 +18,6 @@ backup/
 uv.lock
 # 向量数据库信息
 chroma_db/
-
+# 测试代码
+go_test/
+my_lab/

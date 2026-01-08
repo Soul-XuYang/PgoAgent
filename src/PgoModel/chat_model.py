@@ -16,6 +16,7 @@ class ChatAI(ChatOpenAI): # 这一类型兼容多种
         openai_api_base: str = "",
         deep_thinking: bool = False,
         max_tokens: int = 2048,
+        streaming: bool = False,
         thinking_config: Optional[Dict[str, Any]] = None, # Dict[str, Any] | None 或者不传
         **kwargs: Any, # 为了兼容父类 ChatOpenAI 的其他参数-就是不管了
     ):
@@ -31,6 +32,7 @@ class ChatAI(ChatOpenAI): # 这一类型兼容多种
             openai_api_key=openai_api_key,
             openai_api_base=openai_api_base,
             max_tokens=max_tokens,
+            streaming = streaming,
             **kwargs,
         )
         self.deep_thinking = deep_thinking

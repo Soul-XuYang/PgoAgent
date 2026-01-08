@@ -9,7 +9,7 @@ llm = ChatAI(
     openai_api_key=API_KEY,  # 改为 openai_api_key
     openai_api_base=BASE_URL,  # 改为 openai_api_base
     deep_thinking=False,
-    timeout = 300
+    timeout = 300,
 )
 
 def stream_output(model: ChatAI, prompt: str, print_choice: bool = True) -> Tuple[str, List[str]]:

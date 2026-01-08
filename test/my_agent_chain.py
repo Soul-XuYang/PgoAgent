@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage
 from langchain.agents import create_agent
 from agent.my_llm import llm
 from agent.tools import LOCAL_TOOLS
-from utils.base_utils import *
+from agent.utils.base_utils import *
 from agent.tools.file_tool import *
 
 agent = create_agent(

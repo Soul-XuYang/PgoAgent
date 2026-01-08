@@ -1,4 +1,3 @@
-import asyncio
 from typing import Dict
 
 from langchain_core.messages import SystemMessage
@@ -57,3 +56,32 @@ def accumulate_usage(old, new):
         "output": old.get("output", 0) + new.get("output", 0),
         "total": old.get("total", 0) + new.get("total", 0),
     }
+from functools import wraps
+def run_time(func):
+    @wraps(func) # 保证原函数的元数据属性
+    def wrapper(*args, **kwargs):
+            start = time.time()
+            result = func(*args, **kwargs)
+            end = time.time()
+            print(f"函数{func.__name__}运行时间为{end-start}s")
+            return result
+    return wrapper
+
+def retry(max_retries :int =3,delay:float = 1.0,):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries_count = 0
+            while retries_count < max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    retries_count += 1
+                    time.sleep(delay)
+                    if retries_count >= max_retries:
+                        raise RuntimeError(f"Function {func.__name__} failed after {max_retries} retries.")
+                    time.sleep(delay)
+        return wrapper
+    return decorator
+
+
