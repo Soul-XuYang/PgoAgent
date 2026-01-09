@@ -16,11 +16,11 @@ from agent.main_cli import test_db_connection
 from langchain_core.messages import HumanMessage
 import time
 from datetime import datetime
-from agent.config import VERSION,DATABASE_DSN
+from agent.config import VERSION,DATABASE_DSN,SERVER_CONFIG
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..')) # 添加项目根目录到路径
 date_time = datetime.now() # 全局变量
 def calculate_time_diff(start_date, end_date):
-    # 计算年份差
+    """计算年份差,采用借位法"""
     years = end_date.year - start_date.year
     months = end_date.month - start_date.month
     days = end_date.day - start_date.day
@@ -70,15 +70,12 @@ def calculate_time_diff(start_date, end_date):
 class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求服务实现类必须继承对应的 Servicer 类
     """gRPC 服务实现类"""
 
-    def __init__(self, store, checkpointer):
-        self.store = store
-        self.checkpointer = checkpointer
-        self.cancel_listeners_table: Dict[str, Any] = {}
+    def __init__(self, graph):
+        self.shared_graph = graph
+        self.cancel_listeners_table: Dict[str, Any] = {} # 同一个公共变量
+        self._table_lock = asyncio.Lock()
 
-    async def _create_agent_runner(self, user_config: dict):
-        """为每个用户请求创建独立的langgraph的agent_runner"""
-        graph = await create_graph(self.store, user_config, checkpointer=self.checkpointer)
-        return AgentRunner(graph)
+
 
     async def Chat(self, request,context): # 这个方法严格遵循proto文件中定义的接口
         """非流式对话"""
@@ -96,11 +93,15 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
             from agent.main_cli import CancelListener
             cancel_listener = CancelListener()
             thread_key = f"{request.user_config.user_id}_{request.user_config.thread_id}"
-            self.cancel_listeners_table[thread_key] = cancel_listener # 构建一个共享id，到时候可以依据id来取消请求
+            async with self._table_lock:
+                if thread_key in self.cancel_listeners_table:
+                    old_listener = self.cancel_listeners_table[thread_key]
+                    old_listener.should_cancel = True  # 取消旧请求
+                self.cancel_listeners_table[thread_key] = cancel_listener
 
             try:
-                agent_runner = await self._create_agent_runner(user_config) # 创建agent_runner
-                reply, token_usage = await agent_runner.chat( # 调用当前的chat函数
+                agent_runner = AgentRunner(self.shared_graph)
+                reply, token_usage = await agent_runner.chat(
                     request.user_input,
                     user_config,
                     cancel_listener
@@ -111,8 +112,13 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                     success=True
                 )
             finally:
-                if thread_key in self.cancel_listeners_table:
-                    del self.cancel_listeners_table[thread_key] # 删除对应的id防止冲突
+                async with self._table_lock:
+                    if thread_key in self.cancel_listeners_table:
+                        # 可选：检查是否是自己的 listener（更安全）
+                        current_listener = self.cancel_listeners_table[thread_key]
+                    if current_listener is cancel_listener:
+                        del self.cancel_listeners_table[thread_key]
+
 
         except Exception as e:
             logger.error(f"GRPC | Chat error: {e}")
@@ -136,10 +142,14 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
             from agent.main_cli import CancelListener
             cancel_listener = CancelListener()
             thread_key = f"{request.user_config.user_id}_{request.user_config.thread_id}"
-            self.cancel_listeners_table[thread_key] = cancel_listener
+            async with self._table_lock:
+                if thread_key in self.cancel_listeners_table:
+                    old_listener = self.cancel_listeners_table[thread_key]
+                    old_listener.should_cancel = True  # 取消旧请求
+                self.cancel_listeners_table[thread_key] = cancel_listener
 
             try:
-                agent_runner = await self._create_agent_runner(user_config)
+                agent_runner = AgentRunner(self.shared_graph) # 本graph
                 async for chunk in agent_runner.chat_stream(
                         request.user_input,
                         user_config,
@@ -153,8 +163,12 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                         node_name=chunk.get("node_name", "")
                     )
             finally:
-                if thread_key in self.cancel_listeners_table:
-                    del self.cancel_listeners_table[thread_key]
+                async with self._table_lock:
+                    if thread_key in self.cancel_listeners_table:
+                        # 可选：检查是否是自己的 listener（更安全）
+                        current_listener = self.cancel_listeners_table[thread_key]
+                    if current_listener is cancel_listener:
+                        del self.cancel_listeners_table[thread_key]
 
         except Exception as e:
             logger.error(f"ChatStream error: {e}")
@@ -176,7 +190,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 "recursion_limit": request.user_config.recursion_limit or 50
             }
 
-            agent_runner = await self._create_agent_runner(user_config)
+            agent_runner = AgentRunner(self.shared_graph)
             history = await agent_runner.get_conversation_history(user_config) # 获取对应用户的历史对话
 
             conversation_pairs = []
@@ -209,25 +223,27 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
         """取消当前任务"""
         try:
             thread_key = f"{request.user_id}_{request.thread_id}"
-            if thread_key in self.cancel_listeners_table:
-                cancel_listener = self.cancel_listeners_table[thread_key]
-                cancel_listener.should_cancel = True
-                return agent_pb2.CancelResponse(
-                    success=True,
-                    message="当前任务取消已请求"
-                )
-            else:
-                return agent_pb2.CancelResponse(
-                    success=False,
-                    message="未找到对应的任务"
-                )
+            # 取消并删除对应的id需要加锁来保证线程安全
+            async with self._table_lock:
+                if thread_key in self.cancel_listeners_table:
+                    cancel_listener = self.cancel_listeners_table[thread_key]
+                    cancel_listener.should_cancel = True
+                    return agent_pb2.CancelResponse(
+                        success=True,
+                        message="当前任务取消已请求"
+                    )
+                else:
+                    return agent_pb2.CancelResponse(
+                        success=False,
+                        message="未找到对应的任务"
+                    )
         except Exception as e:
             logger.error(f"CancelTask error: {e}")
             return agent_pb2.CancelResponse(
                 success=False,
                 message=f"取消任务失败: {str(e)}"
             )
-    async def GetServiceInfo(self, request, context):
+    async def GetServerInfo(self, request, context):
         """获取当前服务器信息"""
         now_time = datetime.now()
         years,months,days,hours,minutes = calculate_time_diff(date_time, now_time)
@@ -246,9 +262,9 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
         )
 
 
-async def serve(host: str = "[::]", port: int = 50051, DATABASE_DSN: str = "",max_threadings: int = 10):
+async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_threading: int = 10):
     """启动 gRPC 服务器"""
-    if not await test_db_connection(DATABASE_DSN): # 测试数据库连接
+    if not await test_db_connection(DSN): # 测试数据库连接
         logger.error("数据库连接失败，无法启动服务")
         return
     async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
@@ -258,10 +274,19 @@ async def serve(host: str = "[::]", port: int = 50051, DATABASE_DSN: str = "",ma
         async with AsyncPostgresSaver.from_conn_string(DATABASE_DSN) as checkpointer:
             await checkpointer.setup()
             logger.info("PostgresSaver checkpoint 初始化成功!")
-            # 正式启动服务器
-            server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=max_threadings)) # 启动异步服务器
-            agent_pb2_grpc.add_AgentServiceServicer_to_server( # 将上述的服务和服务器添加到对应的服务函数里
-                AgentServiceImpl(store, checkpointer),
+            default_config = {
+                "configurable": {
+                    "thread_id": "init",
+                    "user_id": "system",
+                    "chat_mode": "normal"
+                },
+                "recursion_limit": 50
+            }
+            shared_graph = await create_graph(store, default_config, checkpointer=checkpointer)
+            logger.info("graph任务图当前已创建") # 之所以可以共享创建任务图是因为对应的函数可以传入用户参数从而保持不同的状态
+            server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=max_threading))
+            agent_pb2_grpc.add_AgentServiceServicer_to_server(
+                AgentServiceImpl(shared_graph),
                 server
             )
 
@@ -271,10 +296,10 @@ async def serve(host: str = "[::]", port: int = 50051, DATABASE_DSN: str = "",ma
             logger.info(f"gRPC 服务器已启动，运行地址为: {listen_addr}")
 
             try:
-                await server.wait_for_termination() # 一直等待直到服务器终止
+                await server.wait_for_termination()
             except KeyboardInterrupt:
                 logger.info("当前正在关闭服务器...")
-                await server.stop(5) # 等待5秒后关闭服务器
+                await server.stop(5)
 
 
 if __name__ == "__main__":
@@ -284,4 +309,5 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy()) # 其他系统使用默认策略
-    asyncio.run(serve(port=50051, DATABASE_DSN=DATABASE_DSN, max_threadings=10))
+    print(SERVER_CONFIG)
+    asyncio.run(serve(port=50051, DSN=DATABASE_DSN, max_threading=10))

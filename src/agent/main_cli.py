@@ -52,7 +52,7 @@ class CancelListener:
     """后台监听用户取消输入的类 - 使用独立线程监听"""
 
     def __init__(self):
-        self.should_cancel = False
+        self.should_cancel = False # 标志位
         self.input_queue = queue.Queue()
         self.listener_thread = None
         self.stop_flag = threading.Event()
@@ -337,6 +337,6 @@ async def main():
 
 if __name__ == "__main__":
     if sys.platform.startswith("win"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略-专门对于win系统的
     asyncio.run(main())
     # 你好，我叫jack，请问你叫什么呢?
