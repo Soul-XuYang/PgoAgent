@@ -7,7 +7,7 @@ import time
 import numpy as np
 from typing import List, Union, TypedDict
 from langchain.embeddings.base import Embeddings
-from config.logger_config import logger
+from agent.config.logger_config import logger
 
 class EmbeddingRequest(TypedDict):
     model: str
@@ -310,7 +310,7 @@ def check_normalization(embedding: List[float]) -> bool:
 # 使用示例
 if __name__ == "__main__":
     # 1. 初始化
-    from config.basic_config import EMBEDDING_API_KEY,EMBEDDING_MODEL_URL
+    from agent.config.basic_config import EMBEDDING_API_KEY,EMBEDDING_MODEL_URL
     embedder = EmbeddingModel(
         model_name="BAAI/bge-large-zh-v1.5",
         api_url=EMBEDDING_MODEL_URL,

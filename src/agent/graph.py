@@ -12,9 +12,9 @@ from langgraph.store.postgres import AsyncPostgresStore
 from langgraph.types import interrupt
 from langgraph_runtime_inmem.store import Store
 from langmem.short_term import SummarizationNode
-from config import logger
+from agent.config import logger
 from agent.subAgents.decisionAgent import decision_graph
-from config import PRINT_SWITCH, DATABASE_DSN
+from agent.config import PRINT_SWITCH, DATABASE_DSN
 from agent.tools import *
 from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里提供 get_mcp_tools
 from agent.tools import BLACK_LIST
@@ -40,7 +40,7 @@ class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     usages: Annotated[dict[str, int], accumulate_usage]
     context: NotRequired[dict[str]] # 上下文-chat功能
-    requires_agent: NotRequired[bool]
+    requires_agent: NotRequired[bool] # 分支
 
     # 对话记录
     conversation_pairs: NotRequired[list[BaseMessage]] # 目前还是用list存，一是本身长度不长二是内存小一些

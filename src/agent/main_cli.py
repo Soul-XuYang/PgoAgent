@@ -4,9 +4,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage
 from langgraph.store.postgres import AsyncPostgresStore
-from config import DATABASE_DSN
+from agent.config import DATABASE_DSN
 from graph import create_graph
-from config import logger
+from agent.config import logger
 from typing import TypedDict
 import time
 import threading
@@ -28,8 +28,14 @@ class StreamOutput(TypedDict):
     """流式输出"""
     output: str
     final_response: bool
+    node_name:str
     token: int
 
+class AgentState(TypedDict):
+    """流式输出"""
+    CumulativeUsage: int
+    summary: str
+    latest_conversation: list
 
 def node_output(node: str) -> str:
     node_dict = {
@@ -76,8 +82,14 @@ class CancelListener:
                         if line.lower() in {"cancel", "c", "取消"}:
                             self.should_cancel = True
                             break
-            except Exception:
-                pass
+            except KeyboardInterrupt:
+                # 处理 用户的Ctrl+C 中断
+                self.should_cancel = True
+                break
+            except Exception as e:
+                logger. warning(f"中断错误：{e}")
+
+
 
     def start(self):
         """启动监听线程"""
@@ -170,7 +182,8 @@ class AgentRunner:
                     yield StreamOutput(
                         output="⚠️ 任务已被用户取消",
                         final_response=True,
-                        token=total_token
+                        token=total_token,
+                        node_name=""
                     )
                     return
 
@@ -181,6 +194,7 @@ class AgentRunner:
                         yield StreamOutput(
                             output=node_output(node),
                             final_response=False,
+                            node_name=node,
                             token=node_token
                         )
                         continue
@@ -191,11 +205,42 @@ class AgentRunner:
                         yield StreamOutput(
                             output=full_reply,
                             final_response=True,
+                            node_name=node,
                             token=total_token
                         )
         finally:
             if cancel_listener:
                 cancel_listener.stop()
+
+    async def get_conversation_history(self, user_config: UserConfig) -> dict:
+        """依据用户ID获取当前会话的对话历史和状态信息"""
+        try:
+            # 从 checkpoint 获取当前状态
+            state_snapshot = await self._graph.aget_state(user_config)  # 这个是graph里的一个函数方法
+            if not state_snapshot or not state_snapshot.values:
+                return AgentState(
+                    latest_conversation=[],
+                    CumulativeUsage=0,
+                    summary="",
+                )
+
+            state = state_snapshot.values
+            conversation_pairs = state.get("conversation_pairs", [])
+            context = state.get("context", {})
+            usages = state.get("usages", {})
+
+            return AgentState(
+                    latest_conversation=conversation_pairs,
+                    CumulativeUsage=usages.get("total", 0),
+                    summary=context.get("summary", ""),
+                )
+        except Exception as e:
+            logger.error(f"获取对话历史失败: {e}")
+            return AgentState(
+                    latest_conversation=[],
+                    CumulativeUsage=0,
+                    summary="",
+                )
 
 async def test_db_connection(dsn: str) -> bool:
     """直接测试数据库连接，快速失败"""
@@ -232,16 +277,17 @@ async def main():
             print("2. 输入 'stream' 切换流式输出，'normal' 切换普通输出")
             print("3. 在 Agent 执行过程中，可输入 'cancel'/'c'/'取消' 来中断")
             print("=" * 60)
-            total_token = 0
+            init_state= await agent.get_conversation_history(user_config)
+            total_token = init_state.get("CumulativeUsage", 0)
+            print(init_state)
             mode = user_config["configurable"].get("chat_mode", "normal")
-            print(mode)
             while True:
                 user_input = input("用户> ").strip()
                 if user_input == "" or user_input == "\n":
                     print("输入为空，请重新输入内容!")
                     continue
                 if user_input.lower() in {"exit", "quit", "q", "e"}:
-                    print("退出对话")
+                    print("退出当前对话")
                     break
 
                 if user_input.lower() == "stream":
@@ -270,8 +316,8 @@ async def main():
                         print(f"|系统信息| token用量:{current_token}, 耗时:{time.time() - start_time:.2f}s")
                     else:
                         reply, current_token = await agent.chat(user_input, user_config, cancel_listener)
-                        usage_delta = current_token
-                        total_token += current_token
+                        usage_delta = current_token-total_token
+                        total_token = current_token
                         print("PgoAgent> ", reply)
                         print(f"|系统信息| token用量:{usage_delta}, 耗时:{time.time() - start_time:.2f}s")
 
@@ -284,8 +330,9 @@ async def main():
                 finally:
                     # 重置取消监听器
                     cancel_listener.reset()
+    print("当前Pgo CLI程序已结束")
 
-            print(f"对话结束,总的token用量:{total_token}")
+
 
 
 if __name__ == "__main__":

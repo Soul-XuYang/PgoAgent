@@ -1,5 +1,5 @@
 from langchain_openai import ChatOpenAI
-from config import API_KEY, BASE_URL
+from agent.config import API_KEY, BASE_URL
 from typing import Tuple, List
 from PgoModel import ChatAI
 # 只要继承ChatOpenAI 就可以使用，这里对它进行了改造

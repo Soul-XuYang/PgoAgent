@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from agent.my_llm import llm
 from .state_utils import get_latest_HumanMessage
 from agent.utils import extract_token_usage
-from config.basic_config import PRINT_SWITCH
+from agent.config.basic_config import PRINT_SWITCH
 
 class PlannerState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]

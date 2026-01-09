@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package agent;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "proto/agent;agent_grpc";
+
+// Python Agent Server
+service AgentService {
+    // 普通对话（非流式）
+    rpc Chat(ChatRequest) returns (ChatResponse);
+    
+    // 流式对话
+    rpc ChatStream(ChatRequest) returns (stream StreamChunk);
+    
+    // 获取对话历史
+    rpc GetConversationHistory(HistoryRequest) returns (HistoryResponse);
+    
+    // 取消当前任务
+    rpc CancelTask(CancelRequest) returns (CancelResponse);
+
+    // 获取服务器信息
+    rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfo);
+}
+
+// 用户配置
+message UserConfig {
+    string thread_id = 1;    // 会话线程ID
+    string user_id = 2;      // 用户ID
+    string chat_mode = 3;    // 聊天模式: "stream" 或 "normal"
+    int32 recursion_limit = 4; // 递归限制
+}
+
+// 对话请求
+message ChatRequest {
+    string user_input = 1;        // 用户输入
+    UserConfig user_config = 2;  // 用户配置
+}
+
+// 对话响应（非流式）
+message ChatResponse {
+    string reply = 1;            // Agent回复
+    int32 token_usage = 2;       // Token使用量
+    bool success = 3;            // 是否成功
+    string error_message = 4;    // 错误信息（如果有）
+}
+
+// 流式输出块
+message StreamChunk {
+    string output = 1;           // 输出内容
+    bool final_response = 2;     // 是否为最终响应
+    int32 token = 3;             // Token使用量
+    string node_name = 4;        // 当前节点名称（用于状态提示）
+}
+
+// 历史记录请求
+message HistoryRequest {
+    UserConfig user_config = 1;  // 用户配置
+}
+
+// 历史记录响应
+message HistoryResponse {
+    repeated ConversationPair latest_conversation = 1; // 最新对话对
+    int32 cumulative_usage = 2;  // 累计Token使用量
+    string summary = 3;          // 对话摘要
+}
+
+// 对话对（用户消息和AI回复）
+message ConversationPair {
+    string role = 1;             // "user" 或 "assistant"
+    string content = 2;          // 消息内容
+    int64 timestamp = 3;          // 时间戳
+}
+
+// 取消任务请求
+message CancelRequest {
+    string thread_id = 1;        // 要取消的线程ID
+    string user_id = 2;          // 用户ID
+}
+
+// 取消任务响应
+message CancelResponse {
+    bool success = 1;            // 是否成功取消
+    string message = 2;          // 响应消息
+}
+
+// 服务器信息
+message ServerInfo {
+    string version = 1;          // 服务器版本
+    string run_time = 2;       // 构建时间
+}

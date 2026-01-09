@@ -1,9 +1,5 @@
-# 数据库通用配置
-[database.common]
-charset = "utf8mb4"
-max_idle_conns = 10
-max_open_conns = 100
-conn_max_lifetime = 3600  # 秒
+version = "0.0.3"
+
 
 # 开发环境数据库配置
 [database.dev]
@@ -13,6 +9,7 @@ port = 5432
 user = "postgres"
 password = "123456"
 db_name = "postgres"
+
 # 继承通用配置（TOML本身不支持继承，可在代码中合并）
 
 # 生产环境数据库配置
@@ -23,6 +20,17 @@ port = 1234
 user = ""
 password = ""
 db_name = ""
+
+# Python服务端配置
+[grpc.server]
+host = "0.0.0.0"
+port = 50051
+max_threads = 10
+
+# Go客户端配置
+[grpc.client]
+host = "0.0.0.0"
+port = 8080
 
 # 是否使用本地部署的大模型
 [model.use]

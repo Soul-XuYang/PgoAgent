@@ -2,7 +2,7 @@ from agent.rag.RAGEngine import RagEngine
 from agent.rag.loader import DocumentLoader
 from agent.rag.spliter import TextSplitter
 from loader import get_files_in_folder
-from config.logger_config import logger
+from agent.config.logger_config import logger
 
 
 if __name__ == "__main__":
