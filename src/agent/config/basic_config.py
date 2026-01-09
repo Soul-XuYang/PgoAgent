@@ -3,7 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PgoModel import  EmbeddingModel,EmbeddingModelAsync
 import chromadb
-from config.logger_config import logger
+from agent.config.logger_config import logger
 from PgoModel import RerankModel, RerankModelAsync
 
 load_dotenv(override=True)  # 加载环境变量

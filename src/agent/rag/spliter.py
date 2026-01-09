@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Literal, Optional, Sequence, Any
+from typing import Literal, Sequence, Any
 import json
 
 from langchain_experimental.text_splitter import SemanticChunker
@@ -10,12 +10,10 @@ from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-from langchain_core.documents import Document
-
 
 try:
     # 与 RAGEngine 对齐，默认复用全局嵌入模型
-    from config.basic_config import embedder as default_embedder, FILE_PATH
+    from agent.config.basic_config import embedder as default_embedder, FILE_PATH
 except Exception:
     default_embedder = None  # 允许外部注入
     FILE_PATH = "../../file"

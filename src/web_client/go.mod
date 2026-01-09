@@ -4,6 +4,7 @@ module Pgoagent
 go 1.24.11
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/net v0.47.0 // indirect

@@ -7,7 +7,7 @@ from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from agent.my_llm import llm
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from config.basic_config import logger
+from agent.config.basic_config import logger
 
 # python_mcp_server_config = {
 #     "url": "http://127.0.0.1:7070/sse",

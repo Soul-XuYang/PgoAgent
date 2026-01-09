@@ -52,7 +52,7 @@ def load_database_config(env: str = "dev")->DatabaseConfig:
             user=db_config["user"],
             password=db_config["password"],
             dbname=db_config["db_name"]
-        )
+        ),config["version"]
     except FileNotFoundError:
         raise FileNotFoundError(f"配置文件未找到")
     except KeyError as e:
@@ -148,12 +148,12 @@ def load_rerank_model() -> RerankModelConfig:
     except KeyError as e:
         raise ValueError(f"配置文件缺少必要的字段: {e}")
 
-def get_dsn(env:str ='dev')->str:
-    database_config = load_database_config(env)
-    return f"{database_config.type}://{database_config.user}:{database_config.password}@{database_config.host}:{database_config.port}/{database_config.dbname}"
+def get_dsn(env:str ='dev')->tuple[str,str]:
+    database_config,version = load_database_config(env)
+    return f"{database_config.type}://{database_config.user}:{database_config.password}@{database_config.host}:{database_config.port}/{database_config.dbname}",version
 
 # 全局函数变量
-DATABASE_DSN=get_dsn()
+DATABASE_DSN,VERSION=get_dsn()
 
 
 if __name__ == "__main__":

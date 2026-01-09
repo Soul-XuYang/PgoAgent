@@ -143,7 +143,7 @@ class RerankModelAsync:
                     raise
 
 async def test_rerank_model_async():
-    from config import RERANK_API_KEY, RERANK_MODEL_URL
+    from agent.config import RERANK_API_KEY, RERANK_MODEL_URL
     reranker = RerankModelAsync(model_name="BAAI/bge-reranker-v2-m3",api_url=RERANK_MODEL_URL, api_key=RERANK_API_KEY)
 
 

@@ -1,30 +1,140 @@
-package main  // 声明主包，必须是main才能生成可执行程序
+package main
 
 import (
-    "fmt"
-    "os"
-    "Pgoagent/log"
-    "go.uber.org/zap"
-    "time"
-    "path/filepath"
-)   // 导入格式化输出的标准库
+	"context"
+	"fmt"
+	"io"
+	"time"
 
-// main函数：程序的入口函数，必须是main()
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	
+	agent_grpc "Pgoagent/agent_grpc" // 根据你的实际包路径调整
+	"Pgoagent/log"
+	"go.uber.org/zap"
+)
+
 func main() {
-    	//初始化日志以及监控代码程序
-	if err := log.Init(false); err != nil { // 初始化日志-false 表示开发模式
+	// 初始化日志
+	if err := log.Init(false); err != nil {
 		panic(err)
 	}
-	defer log.Sync() //确保日志写入
-	Monitor := log.NewMonitor()
-	dir, err := os.Getwd()
-    stastics_dir := filepath.Clean(filepath.Join(dir, "..", ".."))
+	defer log.Sync()
+
+	// 连接 gRPC 服务器
+	conn, err := grpc.NewClient(
+		"localhost:50051",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
 	if err != nil {
-		log.L().Error("Failed to get Path", zap.Error(err))
+		log.L().Fatal("连接失败", zap.Error(err))
 	}
-    fmt.Println(stastics_dir)
-	Monitor.StartMonitor(stastics_dir) // 这里输入的路径是项目根目录
-	defer Monitor.StopMonitor()
-    fmt.Println("Hello Go! 我的第一个Go项目")
-    time.Sleep(10 * time.Second)
+	defer conn.Close()
+
+	client := agent_grpc.NewAgentServiceClient(conn)
+
+	// 示例1: 非流式对话
+	testChat(client)
+
+	// 示例2: 流式对话
+	testChatStream(client)
+
+	// 示例3: 获取对话历史
+	testGetHistory(client)
+}
+
+func testChat(client agent_grpc.AgentServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req := &agent_grpc.ChatRequest{
+		UserInput: "你好，请介绍一下你自己",
+		UserConfig: &agent_grpc.UserConfig{
+			ThreadId:      "thread_001",
+			UserId:        "user_001",
+			ChatMode:      "normal",
+			RecursionLimit: 50,
+		},
+	}
+
+	resp, err := client.Chat(ctx, req)
+	if err != nil {
+		log.L().Error("Chat 调用失败", zap.Error(err))
+		return
+	}
+
+	if resp.Success {
+		fmt.Printf("回复: %s\n", resp.Reply)
+		fmt.Printf("Token 使用量: %d\n", resp.TokenUsage)
+	} else {
+		fmt.Printf("错误: %s\n", resp.ErrorMessage)
+	}
+}
+
+func testChatStream(client agent_grpc.AgentServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req := &agent_grpc.ChatRequest{
+		UserInput: "请详细介绍一下 LangGraph",
+		UserConfig: &agent_grpc.UserConfig{
+			ThreadId:      "thread_001",
+			UserId:        "user_001",
+			ChatMode:      "stream",
+			RecursionLimit: 50,
+		},
+	}
+
+	stream, err := client.ChatStream(ctx, req)
+	if err != nil {
+		log.L().Error("ChatStream 调用失败", zap.Error(err))
+		return
+	}
+
+	fmt.Println("开始接收流式响应:")
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.L().Error("接收流式数据失败", zap.Error(err))
+			break
+		}
+
+		if chunk.FinalResponse {
+			fmt.Printf("\n[最终回复] %s\n", chunk.Output)
+			fmt.Printf("[Token] %d\n", chunk.Token)
+		} else {
+			fmt.Printf("\r[状态] %s", chunk.Output)
+		}
+	}
+	fmt.Println("\n流式响应结束")
+}
+
+func testGetHistory(client agent_grpc.AgentServiceClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &agent_grpc.HistoryRequest{
+		UserConfig: &agent_grpc.UserConfig{
+			ThreadId:      "thread_001",
+			UserId:        "user_001",
+			ChatMode:      "normal",
+			RecursionLimit: 50,
+		},
+	}
+
+	resp, err := client.GetConversationHistory(ctx, req)
+	if err != nil {
+		log.L().Error("GetConversationHistory 调用失败", zap.Error(err))
+		return
+	}
+
+	fmt.Printf("累计 Token 使用量: %d\n", resp.CumulativeUsage)
+	fmt.Printf("摘要: %s\n", resp.Summary)
+	fmt.Printf("对话历史 (%d 条):\n", len(resp.LatestConversation))
+	for i, pair := range resp.LatestConversation {
+		fmt.Printf("  [%d] %s: %s\n", i+1, pair.Role, pair.Content)
+	}
 }

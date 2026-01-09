@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, Sequence, Dict, Iterator, Any, Tuple
 from langchain_core.documents import Document
-from config import *
+from agent.config import *
 from agent.rag.loader import DocumentLoader
 from agent.rag.spliter import TextSplitter
 from agent.rag.indexer import BM25Indexer

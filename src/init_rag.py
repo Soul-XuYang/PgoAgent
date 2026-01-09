@@ -1,7 +1,7 @@
 from agent.rag.RAGEngine import RagEngine
 from agent.rag.loader import DocumentLoader,get_files_in_folder
 from agent.rag.spliter import TextSplitter
-from config import FILE_PATH
+from agent.config import FILE_PATH
 from typing import Literal
 
 def init_rag_engine(collection_name:str = "my_vector",path:str = FILE_PATH,file_name:str|list[str]=None,mode:str= Literal["semantic", "recursive"] | None ):
