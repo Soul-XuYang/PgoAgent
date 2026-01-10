@@ -83,6 +83,13 @@ if %errorlevel% equ 0 (
 echo [Success] Python code generated to src/agent/agent_grpc/
 echo.
 
+echo [Info] Fixing gRPC Python imports...
+python scripts\fix_grpc_imports.py
+if %errorlevel% neq 0 (
+    echo [Warning] Failed to fix imports, but continuing...
+)
+echo.
+
 echo [2/2] Generating Go gRPC code...
 REM Check if Go tools are installed
 protoc --version >nul 2>&1

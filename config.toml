@@ -23,14 +23,15 @@ db_name = ""
 
 # Python服务端配置
 [grpc.server]
-host = "0.0.0.0"
+host = "localhost"
 port = 50051
 max_threads = 16
 
 # Go客户端配置
 [grpc.client]
-host = "0.0.0.0"
+host = "localhost"
 port = 8080
+client_connect_timeout = 30
 
 # 是否使用本地部署的大模型
 [model.use]

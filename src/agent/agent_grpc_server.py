@@ -1,9 +1,13 @@
+# agent_grpc_server服务端
 import asyncio
 import grpc
 from concurrent import futures
 from typing import Dict
 import sys
 import os
+# 忽略jieba 分词库内部使用了已弃用的 pkg_resources API警告
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 # 添加项目路径
 from agent.agent_grpc import agent_pb2, agent_pb2_grpc
 from agent.main_cli import AgentRunner, UserConfig # 相关的封装agent模块和用户数据
@@ -18,7 +22,7 @@ import time
 from datetime import datetime
 from agent.config import VERSION,DATABASE_DSN,SERVER_CONFIG
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..')) # 添加项目根目录到路径
-date_time = datetime.now() # 全局变量
+
 def calculate_time_diff(start_date, end_date):
     """计算年份差,采用借位法"""
     years = end_date.year - start_date.year
@@ -74,12 +78,18 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
         self.shared_graph = graph
         self.cancel_listeners_table: Dict[str, Any] = {} # 同一个公共变量
         self._table_lock = asyncio.Lock()
+        self.start_time = datetime.now()
 
 
 
     async def Chat(self, request,context): # 这个方法严格遵循proto文件中定义的接口
         """非流式对话"""
         try:
+            if request.user_config.thread_id == "" or request.user_config.user_id == "":
+                return agent_pb2.ChatResponse(
+                    success=False,
+                    error_message="user_config is null"
+                )
             # 请求的数据
             user_config:UserConfig = {
                 "configurable": {
@@ -89,6 +99,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 },
                 "recursion_limit": request.user_config.recursion_limit or 50
             }
+
             # 上述转换请求
             from agent.main_cli import CancelListener
             cancel_listener = CancelListener()
@@ -246,7 +257,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
     async def GetServerInfo(self, request, context):
         """获取当前服务器信息"""
         now_time = datetime.now()
-        years,months,days,hours,minutes = calculate_time_diff(date_time, now_time)
+        years,months,days,hours,minutes = calculate_time_diff(self.start_time, now_time)
         time_parts = []
         if years > 0:
             time_parts.append(str(years))
@@ -256,8 +267,11 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
             time_parts.append(str(days))
         if hours > 0:
             time_parts.append(str(hours))
+        if not time_parts:
+            time_parts.append("0")
         return agent_pb2.ServerInfo(
             version=VERSION,
+            start_time= datetime.now().strftime("%Y-%m-%d %H:%M"),
             run_time = '-'.join(time_parts)
         )
 
@@ -309,5 +323,6 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy()) # 其他系统使用默认策略
+
     print(SERVER_CONFIG)
-    asyncio.run(serve(port=50051, DSN=DATABASE_DSN, max_threading=10))
+    asyncio.run(serve(host= SERVER_CONFIG.host, port=SERVER_CONFIG.port, DSN=DATABASE_DSN, max_threading=SERVER_CONFIG.max_threads))

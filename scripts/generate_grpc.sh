@@ -85,6 +85,13 @@ fi
 echo "[Success] Python code generated to src/agent/agent_grpc/"
 echo ""
 
+echo "[Info] Fixing gRPC Python imports..."
+python scripts/fix_grpc_imports.py
+if [ $? -ne 0 ]; then
+    echo "[Warning] Failed to fix imports, but continuing..."
+fi
+echo ""
+
 echo "[2/2] Generating Go gRPC code..."
 # 检查 Go 工具是否安装
 if ! command -v protoc &> /dev/null; then

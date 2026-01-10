@@ -88,5 +88,6 @@ message CancelResponse {
 // 服务器信息
 message ServerInfo {
     string version = 1;          // 服务器版本
-    string run_time = 2;       // 构建时间
+    string start_time = 2;
+    string run_time = 3;       // 构建时间
 }

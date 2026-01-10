@@ -1,4 +1,4 @@
-module Pgoagent
+module PgoAgent
 
 // go.mod项目的依赖清单,go.sum依赖的校验文件
 go 1.24.11
