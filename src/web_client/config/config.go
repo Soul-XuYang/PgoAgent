@@ -14,15 +14,24 @@ var StartRunTime = time.Now().Format("2006-01-02 15:04") // 程序启动的事�
 type Config struct {
 	GRPC GRPCConfig `toml:"grpc"`
 	VERSION string `toml:"version"`
+	WEBSERVER WebServer `toml:"web"`
 }
 
 type GRPCConfig struct {
-	Client GRPCClientConfig `toml:"client"`
+	Server GRPCServerConfig `toml:"server"`
 }
 
-type GRPCClientConfig struct {
+type GRPCServerConfig struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
+}
+type WebServer struct {
+	Config  WebServerConfig `toml:"server"`
+}
+type WebServerConfig struct {
+	Host string `toml:"host"`
+	Port int    `toml:"port"`
+	Timeout int `toml:"timeout"`
 }
 
 

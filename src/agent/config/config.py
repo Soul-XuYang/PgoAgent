@@ -1,6 +1,7 @@
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple, Any
 
 
 @dataclass
@@ -43,10 +44,10 @@ class Server:
     port:int
     max_threads:int
 
-def load_database_config(env: str = "dev")->DatabaseConfig:
+def load_database_config(env: str = "dev")-> tuple[DatabaseConfig, str]:
     """读取相关的配置文件"""
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent. parent / "config.toml"
         with open(config_path, "rb") as f: # 二进制加载
             config = tomllib.load(f)
         db_config = config["database"][env]
@@ -67,7 +68,7 @@ def load_model_use() -> ModelUseConfig:
     读取 config.toml 中 [model.use] 配置，判断是否使用本地部署的大模型。
     """
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent.parent / "config.toml"
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
@@ -89,7 +90,7 @@ def load_model_chat(env: str = "chat") -> ModelChatConfig:
     默认 section 为 "chat"，如以后有多套模型配置可以通过 env 区分。
     """
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent. parent / "config.toml"
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
@@ -111,7 +112,7 @@ def load_embedding_model() -> EmbeddingModelConfig:
     读取 config.toml 中 [model.embedding] 配置。
     """
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent.parent / "config.toml"
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
@@ -135,7 +136,7 @@ def load_rerank_model() -> RerankModelConfig:
     读取 config.toml 中 [model.rerank] 配置。
     """
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent.parent / "config.toml"
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
@@ -162,11 +163,11 @@ def get_server_config() -> Server:
     读取 config.toml 中 [server] 配置。
     """
     try:
-        config_path = Path(__file__).parent.parent.parent / "config.toml"
+        config_path = Path(__file__).parent.parent.parent.parent / "config.toml"
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
-        server_cfg = config["server"]
+        server_cfg = config["grpc"]["server"]
 
         return Server(
             host=server_cfg["host"],

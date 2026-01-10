@@ -9,8 +9,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	
-	agent_grpc "Pgoagent/agent_grpc" // 根据你的实际包路径调整
-	"Pgoagent/log"
+	agent_grpc "PgoAgent/agent_grpc" // 根据你的实际包路径调整
+	"PgoAgent/log"
 	"go.uber.org/zap"
 )
 

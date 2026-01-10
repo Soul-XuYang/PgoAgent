@@ -14,7 +14,11 @@ func  TestLoadConfig(t *testing.T) {
 	}
 
 	// 使用配置：拼接地址（注意 net.JoinHostPort 需要 string 端口）,Iota将数字转换字符串
-	addr := net.JoinHostPort(cfg.GRPC.Client.Host, strconv.Itoa(cfg.GRPC.Client.Port)) // 拼接地址
-	fmt.Println("grpc client addr:", addr)
-    fmt.Println(StartRunTime)
-}
+	client_addr := net.JoinHostPort(cfg.WEBSERVER.Config.Host, strconv.Itoa(cfg.WEBSERVER.Config.Port)) 
+	server_addr := net.JoinHostPort(cfg.GRPC.Server.Host, strconv.Itoa(cfg.GRPC.Server.Port))
+	fmt.Println("web_server_addr:", client_addr)
+	fmt.Println("web_server_timeout:", cfg.WEBSERVER.Config.Timeout)
+	fmt.Println("grpc server addr:", server_addr)
+	fmt.Println("version:", cfg.VERSION)
+
+}	

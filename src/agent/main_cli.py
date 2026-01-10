@@ -255,10 +255,13 @@ async def test_db_connection(dsn: str) -> bool:
         logger.error(f"   请检查 PostgreSQL 服务是否运行，以及 DATABASE_DSN 配置是否正确")
         return False
 
-async def main():
+async def main(user_config: UserConfig):
     # 先测试数据库连接
     if not await test_db_connection(DATABASE_DSN):
         logger.error("数据库连接失败，程序退出")
+        return
+    if user_config:
+        logger.error(f"当前用户的配置信息为空，请传入对应参数")
         return
     # checkpointer 和 Store 都是上下文管理
     async with AsyncPostgresStore.from_conn_string(DATABASE_DSN) as store:
@@ -268,7 +271,7 @@ async def main():
             await checkpointer.setup()
             logger.info("PostgresSaver checkpoint 初始化成功!")
 
-            user_config = {"configurable": {"thread_id": "002", "user_id": "user_003", "chat_mode": "stream"},"recursion_limit": 50  }
+             # 这里是一个测试的用户配置输入
             graph = await create_graph(store, user_config, checkpointer=checkpointer)
             agent = AgentRunner(graph)
             logger.info("Graph 构建完成，进入终端对话模式...(输入 exit/quit 退出)")
@@ -338,5 +341,6 @@ async def main():
 if __name__ == "__main__":
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略-专门对于win系统的
-    asyncio.run(main())
+    # 测试用户的数据
+    asyncio.run(main(user_config = {"configurable": {"thread_id": "002", "user_id": "user_003", "chat_mode": "stream"},"recursion_limit": 50  }))
     # 你好，我叫jack，请问你叫什么呢?
