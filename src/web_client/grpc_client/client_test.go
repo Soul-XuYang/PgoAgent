@@ -1,12 +1,18 @@
-// src/web_client/grpc_client/client_test.go
 package grpc_client
 
 import (
+	"PgoAgent/config"
+	"PgoAgent/log"
 	"context"
 	"fmt"
 	"testing" //测试包
-	"PgoAgent/config"
-	"PgoAgent/log"
+)
+
+const (
+	KB = 1024
+	MB = 1024 * 1024
+	GB = 1024 * 1024 * 1024
+	TB = 1024 * 1024 * 1024 * 1024
 )
 
 // TestClient_Connection 测试客户端连接
@@ -17,14 +23,13 @@ func TestClient_Connection(t *testing.T) {
 	}
 	defer log.Sync()
 
-	// 加载配置
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	// 检查配置加载错误
+	if config.LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
 
 	// 创建客户端
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -57,12 +62,11 @@ func TestClient_Chat(t *testing.T) {
 	}
 	defer log.Sync()
 
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	if config.LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
 
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -85,7 +89,7 @@ func TestClient_Chat(t *testing.T) {
 	fmt.Printf("Token Usage: %d\n", resp.TokenUsage)
 
 	// 测试带选项的对话
-	resp2, err := client.Chat(ctx, "user_003", "test_user_001", "002",
+	resp2, err := client.Chat(ctx, "请介绍一下你自己", "test_user_001", "test_thread_002",
 		SetChatMode("normal"),
 		SetRecursionLimit(30),
 	)
@@ -109,12 +113,11 @@ func TestClient_ChatStream(t *testing.T) {
 	}
 	defer log.Sync()
 
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	if config.LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
 
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -166,12 +169,11 @@ func TestClient_GetConversationHistory(t *testing.T) {
 	}
 	defer log.Sync()
 
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	if config.LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
 
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -189,7 +191,7 @@ func TestClient_GetConversationHistory(t *testing.T) {
 	fmt.Printf("累计 Token: %d\n", history.CumulativeUsage)
 	fmt.Printf("摘要: %s\n", history.Summary)
 	fmt.Printf("最近的对话数量数量: %d\n", len(history.Conversations))
-    // 切片类型
+	// 切片类型
 	for i, pair := range history.Conversations {
 		fmt.Printf("  [%d] %s: %s\n", i+1, pair.Role, pair.Content)
 	}
@@ -231,7 +233,7 @@ func TestClient_GetConversationHistory(t *testing.T) {
 
 // TestClient_GetServerInfo 测试获取服务器信息
 func TestClient_GetServerInfo(t *testing.T) {
-    fmt.Println("Test: start to get ServerInfo")
+	fmt.Println("Test: start to get ServerInfo")
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -241,16 +243,15 @@ func TestClient_GetServerInfo(t *testing.T) {
 	}
 	defer log.Sync()
 
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	if config.LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
-    fmt.Println("client has created successfully: ",cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	fmt.Println("client has created successfully: ", config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client connection: %v", err)
 	}
-    fmt.Println("client has created successfully")
+	fmt.Println("client has created successfully")
 	defer client.Close()
 
 	ctx, cancel := client.WithTimeout(DefaultTimeout)
@@ -266,7 +267,7 @@ func TestClient_GetServerInfo(t *testing.T) {
 	}
 
 	fmt.Printf("服务器版本: %s\n", info.Version)
-    fmt.Printf("服务器启动时间： %s\n",info.StartTime)
+	fmt.Printf("服务器启动时间： %s\n", info.StartTime)
 	fmt.Printf("运行时间: %s\n", info.RunTime)
 }
 
@@ -276,19 +277,18 @@ func BenchmarkClient_Chat(b *testing.B) {
 		b.Fatalf("Failed to init log: %v", err)
 	}
 
-	cfg, err := config.LoadConfig(config.ConfigPath)
-	if err != nil {
-		b.Fatalf("Failed to load config: %v", err)
+	if config.LoadErr != nil {
+		b.Fatalf("Failed to load config: %v", config.LoadErr)
 	}
 
-	client, err := NewClient(cfg.GRPC.Server.Host, cfg.GRPC.Server.Port)
+	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	ctx := context.Background() //基础的空上下文
-    // 重置计时器以排除初始化时间
+	// 重置计时器以排除初始化时间
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := client.Chat(ctx, "benchmark test", "bench_user", fmt.Sprintf("bench_thread_%d", i))

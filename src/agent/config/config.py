@@ -43,6 +43,18 @@ class Server:
     host:str
     port:int
     max_threads:int
+    # 下面这些是 gRPC 服务器相关功能开关和限流配置，全部从 config.toml 的 [grpc.server] 读取
+    enable_jwt: bool
+    enable_global_rate_limit: bool
+    global_rate_limit: int
+    global_burst: int
+    enable_user_rate_limit: bool
+    user_rate_limit: int
+    user_burst: int
+    send_size:int
+    receive_size:int
+    # 是否开启 TLS（仅影响是否使用 add_secure_port），证书路径可以后续再扩展
+    use_tls: bool
 
 def load_database_config(env: str = "dev")-> tuple[DatabaseConfig, str]:
     """读取相关的配置文件"""
@@ -171,8 +183,18 @@ def get_server_config() -> Server:
 
         return Server(
             host=server_cfg["host"],
+            enable_jwt=server_cfg["enable_jwt"],
+            enable_global_rate_limit=server_cfg["enable_global_rate_limit"],
+            global_rate_limit=server_cfg["global_rate_limit"],
+            global_burst=server_cfg["global_burst"],
+            enable_user_rate_limit=server_cfg["enable_user_rate_limit"],
+            user_rate_limit=server_cfg["user_rate_limit"],
+            user_burst=server_cfg["user_burst"],
             port=server_cfg["port"],
             max_threads=server_cfg["max_threads"],
+            send_size=server_cfg["send_size"]*1024*1024,
+            receive_size=server_cfg["receive_size"]*1024*1024,
+            use_tls=server_cfg.get("use_tls", False),
         )
     except FileNotFoundError:
         raise FileNotFoundError("配置文件未找到")

@@ -7,6 +7,7 @@ import (
     "PgoAgent/log"
     "go.uber.org/zap"
     "google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/grpc/metadata"
     agent_grpc "PgoAgent/agent_grpc" //对应的proto文件
 )
 // 这里请求都用现有的结构体格式
@@ -24,6 +25,12 @@ func (c *Client) Chat(ctx context.Context, userInput string, userID, threadID st
 	for _, opt := range opts {
 		opt(config)
 	}
+    token, err := GenerateJWTToken(userID) // 使用 userID 作为 userName
+	if err != nil {
+		log.L().Error("Failed to generate JWT token", zap.Error(err))
+		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 
 	req := &agent_grpc.ChatRequest{
 		UserInput: userInput,
@@ -55,7 +62,7 @@ func (c *Client) ChatStream(ctx context.Context, userInput string, userID, threa
 	if !c.IsConnected() {
 		return fmt.Errorf("gRPC client is closed")
 	}
-
+    
 	config := &ChatConfig{
 		ChatMode:      "stream",
 		RecursionLimit: RecursionLimit,
@@ -63,7 +70,12 @@ func (c *Client) ChatStream(ctx context.Context, userInput string, userID, threa
 	for _, opt := range opts {
 		opt(config)
 	}
-
+    token, err := GenerateJWTToken(userID) // 使用 userID 作为 userName
+	if err != nil {
+		log.L().Error("Failed to generate JWT token", zap.Error(err))
+		return fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token) //追加JWTtoken
 	req := &agent_grpc.ChatRequest{
 		UserInput: userInput,
 		UserConfig: &agent_grpc.UserConfig{
@@ -107,10 +119,17 @@ func (c *Client) ChatStream(ctx context.Context, userInput string, userID, threa
 }
 
 // GetConversationHistory 获取对话历史
-func (c *Client) GetConversationHistory(ctx context.Context, userID, threadID string) (*HistoryResponse, error) {
+func (c *Client) GetConversationHistory(ctx context.Context, userID , threadID string) (*HistoryResponse, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("gRPC client is closed")
 	}
+    
+    token, err := GenerateJWTToken(userID) // 使用 userID 作为 userName
+	if err != nil {
+		log.L().Error("Failed to generate JWT token", zap.Error(err))
+		return nil,fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token) //追加JWTtoken
 
 	req := &agent_grpc.HistoryRequest{
 		UserConfig: &agent_grpc.UserConfig{
@@ -120,13 +139,13 @@ func (c *Client) GetConversationHistory(ctx context.Context, userID, threadID st
 			RecursionLimit: RecursionLimit,
 		},
 	}
-
+    // 调用 GetConversationHistory 方法 进行封装
 	resp, err := c.client.GetConversationHistory(ctx, req)
 	if err != nil {
 		log.L().Error("GetConversationHistory RPC failed", zap.Error(err))
 		return nil, fmt.Errorf("get history RPC failed: %w", err)
 	}
-
+    
 	conversations := make([]ConversationPair, len(resp.LatestConversation))
 	for i, pair := range resp.LatestConversation {
 		conversations[i] = ConversationPair{
@@ -143,12 +162,17 @@ func (c *Client) GetConversationHistory(ctx context.Context, userID, threadID st
 	}, nil
 }
 
-// CancelTask 取消任务
+// CancelTask 取消任务- 需要针对对应用户和对应的线程进行取消
 func (c *Client) CancelTask(ctx context.Context, userID, threadID string) error {
 	if !c.IsConnected() {
 		return fmt.Errorf("gRPC client is closed")
 	}
-
+    token, err := GenerateJWTToken(userID) // 使用 userID 作为 userName
+	if err != nil {
+		log.L().Error("Failed to generate JWT token", zap.Error(err))
+		return fmt.Errorf("failed to generate JWT token: %w", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token) //追加JWTtoken
 	req := &agent_grpc.CancelRequest{
 		UserId:   userID,
 		ThreadId: threadID,
@@ -167,12 +191,12 @@ func (c *Client) CancelTask(ctx context.Context, userID, threadID string) error 
 	return nil
 }
 
-// GetServerInfo 获取服务器信息,无请求信息无需调用对应的请求结构体
+// GetServerInfo 获取服务器信息,无请求信息无需调用对应的请求结构体- -这里无需jwt验证，可以直接跳过
 func (c *Client) GetServerInfo(ctx context.Context) (*ServerInfo, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("gRPC client is closed")
 	}
-
+    
 	resp, err := c.client.GetServerInfo(ctx, &emptypb.Empty{})
 	if err != nil {
 		log.L().Error("GetServerInfo RPC failed", zap.Error(err))
@@ -185,3 +209,4 @@ func (c *Client) GetServerInfo(ctx context.Context) (*ServerInfo, error) {
 		RunTime:  resp.RunTime,
 	}, nil
 }
+

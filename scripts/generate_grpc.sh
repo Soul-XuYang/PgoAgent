@@ -42,7 +42,7 @@ if [ ! -d "src/web_client/agent_grpc" ]; then
     fi
 fi
 
-echo "[1/2] Generating Python gRPC code..."
+echo "[1/3] Generating Python gRPC code..."
 # 检查 Python 工具是否安装
 python -c "import grpc_tools" 2>/dev/null
 if [ $? -ne 0 ]; then
@@ -92,7 +92,7 @@ if [ $? -ne 0 ]; then
 fi
 echo ""
 
-echo "[2/2] Generating Go gRPC code..."
+echo "[2/3] Generating Go gRPC code..."
 # 检查 Go 工具是否安装
 if ! command -v protoc &> /dev/null; then
     echo "[Error] protoc compiler not found!"
@@ -128,8 +128,26 @@ fi
 echo "[Success] Go code generated to src/web_client/agent_grpc/"
 echo ""
 
+echo "[3/3] Generating TLS certificates..."
+python -c "import cryptography" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "[Info] Installing cryptography library..."
+    pip install cryptography
+fi
+
+python scripts/tls.py
+if [ $? -eq 0 ]; then
+    echo "[Success] TLS certificates generated"
+else
+    echo "[Warning] Failed to generate TLS certificates"
+    echo "You can generate them later by running: python scripts/tls.py"
+fi
+echo ""
+
+
+
 echo "================================================="
-echo "All protocol files generated successfully!"
+echo "All protocol files and local tls certificates generated successfully!"
 echo "================================================="
 echo ""
 echo "Generated gRPC files:"
@@ -138,4 +156,6 @@ echo "  Python: src/agent/agent_grpc/agent_pb2.pyi (type stubs)"
 echo "  Python: src/agent/agent_grpc/agent_pb2_grpc.py"
 echo "  Go:     src/web_client/agent_grpc/agent.pb.go"
 echo "  Go:     src/web_client/agent_grpc/agent_grpc.pb.go"
+echo "  TLS:    certs/server.crt"
+echo "  TLS:    certs/server.key"
 echo ""

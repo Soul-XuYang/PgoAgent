@@ -1,4 +1,4 @@
-version = "0.0.3"
+version = "v0.0.3"
 
 
 # 开发环境数据库配置
@@ -26,12 +26,25 @@ db_name = ""
 host = "localhost"
 port = 50051
 max_threads = 16
+# 这里以MB为单位,默认50M
+send_size = 50
+receive_size = 50
+enable_jwt = true
+enable_global_rate_limit = true
+global_rate_limit = 100
+global_burst = 200
+enable_user_rate_limit = true
+user_rate_limit = 60
+user_burst = 120
+use_tls = true
+
 
 # Go客户端配置
-[grpc.client]
+[web.server]
 host = "localhost"
 port = 8080
-client_connect_timeout = 30
+timeout = 30
+use_tls = true
 
 # 是否使用本地部署的大模型
 [model.use]

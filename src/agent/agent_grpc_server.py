@@ -1,6 +1,5 @@
 # agent_grpc_server服务端
 import asyncio
-import grpc
 from concurrent import futures
 from typing import Dict
 import sys
@@ -14,13 +13,16 @@ from agent.main_cli import AgentRunner, UserConfig # 相关的封装agent模块�
 from agent.graph import create_graph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import AsyncPostgresStore
-from agent.config import logger
+from agent.config import logger, animated_banner
 from typing import Any
 from agent.main_cli import test_db_connection
 from langchain_core.messages import HumanMessage
 import time
+from agent.grpc_server import JWTInterceptor, load_server_credentials, GlobalRateLimitInterceptor, UserRateLimitInterceptor
 from datetime import datetime
 from agent.config import VERSION,DATABASE_DSN,SERVER_CONFIG
+import grpc
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..')) # 添加项目根目录到路径
 
 def calculate_time_diff(start_date, end_date):
@@ -276,7 +278,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
         )
 
 
-async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_threading: int = 10):
+async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_threading: int = 10,send_size = 50 * 1024 * 1024,receive_size = 50 * 1024 * 1024 ):
     """启动 gRPC 服务器"""
     if not await test_db_connection(DSN): # 测试数据库连接
         logger.error("数据库连接失败，无法启动服务")
@@ -298,31 +300,89 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
             }
             shared_graph = await create_graph(store, default_config, checkpointer=checkpointer)
             logger.info("graph任务图当前已创建") # 之所以可以共享创建任务图是因为对应的函数可以传入用户参数从而保持不同的状态
-            server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=max_threading))
+
+            # 创建对应的服务端的限流器对象-参数设置
+            enable_jwt =SERVER_CONFIG.enable_jwt
+            enable_global_rate_limit = SERVER_CONFIG.enable_global_rate_limit
+            enable_user_rate_limit = SERVER_CONFIG.enable_user_rate_limit
+            use_tls = SERVER_CONFIG.use_tls
+
+            interceptors = []
+            skip_methods = ["GetServerInfo"]
+            if enable_global_rate_limit:
+                ip_rate_interceptor = GlobalRateLimitInterceptor(
+                    global_rate_per_sec=SERVER_CONFIG.global_rate_limit,
+                    global_burst=SERVER_CONFIG.global_burst,
+                    skip_methods=skip_methods,
+                )
+                interceptors.append(ip_rate_interceptor)
+                logger.info("gRPC: 全体限流拦截器已启用")
+            if enable_jwt:
+                secret_key = os.getenv("JWT_TOKEN", "MY_SECRET_KEY")
+                jwt_interceptor = JWTInterceptor(
+                    secret_key=secret_key,
+                    token_header="authorization",
+                    skip_methods=skip_methods  # GetServerInfo 不需要认证
+                )
+                interceptors.append(jwt_interceptor)
+                logger.info("gRPC: JWT 拦截器已启用")
+
+            # 3. 用户限流拦截器（基于用户ID）
+            if enable_user_rate_limit:
+                user_rate_interceptor = UserRateLimitInterceptor(
+                    user_rate_per_minute=SERVER_CONFIG.user_rate_limit,  # 每个用户每分钟60个请求
+                    user_burst=SERVER_CONFIG.user_burst,              # 突发120个请求
+                    user_id_metadata_key="user_id",
+                    skip_methods=skip_methods,
+                    shards=64,                   # 64个分片减少锁竞争
+                    bucket_ttl_sec=30 * 60,     # 30分钟未访问清理
+                    cleanup_interval_sec=60
+                )
+                interceptors.append(user_rate_interceptor)
+                logger.info("gRPC: 用户限流拦截器已启用")
+
+            server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=max_threading),
+                interceptors=interceptors, # 按顺序执行拦截器
+                options=[('grpc.default_compression_algorithm', grpc.Compression.Gzip),
+                        ('grpc.enable_retry',1),
+                        ('grpc.keepalive_time_ms', 30000),
+                        ('grpc.max_send_message_length', send_size),  # 50MB 发送
+                        ('grpc.max_receive_message_length', receive_size),]  # 50MB 接收
+                        )
             agent_pb2_grpc.add_AgentServiceServicer_to_server(
                 AgentServiceImpl(shared_graph),
                 server
             )
 
             listen_addr = f'{host}:{port}'
-            server.add_insecure_port(listen_addr)
             await server.start()
-            logger.info(f"gRPC 服务器已启动，运行地址为: {listen_addr}")
+            if use_tls:
+                creds = load_server_credentials()  # 依据实际所需传入对应的参数
+                server.add_secure_port(listen_addr, creds)
+                logger.info(f"gRPC: 服务器已启动（TLS），运行地址为: {listen_addr}")
+            else:
+                server.add_insecure_port(listen_addr)
+                logger.info(f"gRPC: 服务器已启动（非加密），运行地址为: {listen_addr}")
 
             try:
                 await server.wait_for_termination()
             except KeyboardInterrupt:
-                logger.info("当前正在关闭服务器...")
+                logger.info("当前正在关闭服务器中...")
                 await server.stop(5)
 
 
 if __name__ == "__main__":
-    import sys
-    logger.info(f"开始启动当前的PgoAgent gRPC服务端服务,版本号: {VERSION}")
+    animated_banner()
     if sys.platform.startswith("win"): # 如果是windows系统
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy()) # 其他系统使用默认策略
 
     print(SERVER_CONFIG)
-    asyncio.run(serve(host= SERVER_CONFIG.host, port=SERVER_CONFIG.port, DSN=DATABASE_DSN, max_threading=SERVER_CONFIG.max_threads))
+    asyncio.run(serve(host= SERVER_CONFIG.host,
+        port=SERVER_CONFIG.port,
+        DSN=DATABASE_DSN,
+        max_threading=SERVER_CONFIG.max_threads,
+        send_size=SERVER_CONFIG.send_size,
+        receive_size=SERVER_CONFIG.receive_size,
+        ))

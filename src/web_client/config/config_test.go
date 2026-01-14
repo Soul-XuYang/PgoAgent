@@ -6,19 +6,24 @@ import (
 	"strconv"
 	"net"
 )
+
 func  TestLoadConfig(t *testing.T) {
 	fmt.Println("start load config!")
-	cfg, err := LoadConfig(ConfigPath)
-	if err != nil {
-		log.Fatalf("load config failed: %v", err)
+	AnimatedBanner()
+	if LoadErr != nil {
+		log.Fatalf("load config failed: %v", LoadErr)
+	}
+	if LoadEnvErr != nil {
+		log.Fatalf("load env failed: %v", LoadEnvErr)
 	}
 
 	// 使用配置：拼接地址（注意 net.JoinHostPort 需要 string 端口）,Iota将数字转换字符串
-	client_addr := net.JoinHostPort(cfg.WEBSERVER.Config.Host, strconv.Itoa(cfg.WEBSERVER.Config.Port)) 
-	server_addr := net.JoinHostPort(cfg.GRPC.Server.Host, strconv.Itoa(cfg.GRPC.Server.Port))
+	client_addr := net.JoinHostPort(ConfigHandler.WEBSERVER.Config.Host, strconv.Itoa(ConfigHandler.WEBSERVER.Config.Port)) 
+	server_addr := net.JoinHostPort(ConfigHandler.GRPC.Server.Host, strconv.Itoa(ConfigHandler.GRPC.Server.Port))
 	fmt.Println("web_server_addr:", client_addr)
-	fmt.Println("web_server_timeout:", cfg.WEBSERVER.Config.Timeout)
+	fmt.Println("web_server_timeout:", ConfigHandler.WEBSERVER.Config.Timeout)
 	fmt.Println("grpc server addr:", server_addr)
-	fmt.Println("version:", cfg.VERSION)
-
+	fmt.Println("version:", ConfigHandler.VERSION)
+	fmt.Println("DSN:", EnvConfigHandler.DSN)
+	fmt.Println("JWT_TOKEN:", EnvConfigHandler.JWTToken)
 }	

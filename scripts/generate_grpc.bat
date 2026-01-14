@@ -45,7 +45,7 @@ if not exist "src\web_client\agent_grpc" (
     )
 )
 
-echo [1/2] Generating Python gRPC code...
+echo [1/3] Generating Python gRPC code...
 REM Check if Python tools are installed
 python -c "import grpc_tools" 2>nul
 if %errorlevel% neq 0 (
@@ -90,7 +90,7 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-echo [2/2] Generating Go gRPC code...
+echo [2/3] Generating Go gRPC code...
 REM Check if Go tools are installed
 protoc --version >nul 2>&1
 if %errorlevel% neq 0 (
@@ -124,6 +124,25 @@ if %errorlevel% neq 0 (
 echo [Success] Go code generated to src/web_client/agent_grpc/
 echo.
 
+
+echo [3/3] Generating TLS certificates...
+python -c "import cryptography" 2>nul
+if %errorlevel% neq 0 (
+    echo [Info] Installing cryptography library...
+    pip install cryptography
+)
+
+python scripts\generate_tls_cert.py
+if %errorlevel% equ 0 (
+    echo [Success] TLS certificates generated
+) else (
+    echo [Warning] Failed to generate TLS certificates
+    echo You can generate them later by running: python scripts\generate_tls_cert.py
+)
+echo.
+
+
+
 echo ==================================================
 echo All protocol files generated successfully!
 echo ==================================================
@@ -133,5 +152,8 @@ echo   Python: src/agent/agent_grpc/agent_pb2.pyi (type stubs)
 echo   Python: src/agent/agent_grpc/agent_pb2_grpc.py
 echo   Go:     src/web_client/agent_grpc/agent.pb.go
 echo   Go:     src/web_client/agent_grpc/agent_grpc.pb.go
+echo   TLS:    certs/server.crt
+echo   TLS:    certs/server.key
+echo ==================================================
 echo.
 pause

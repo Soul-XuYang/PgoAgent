@@ -21,3 +21,6 @@ chroma_db/
 # 测试代码
 go_test/
 my_lab/
+
+*.crt
+*.key
