@@ -49,7 +49,7 @@ func NewCodeCounter() *CodeCounter {
 			"PHP":        {".php"},
 			"Ruby":       {".rb"},
 			"Rust":       {".rs"},
-			"Shell":      {".sh", ".bash", ".zsh"},
+			"Shell":      {".sh", ".bash", ".zsh",".bat"},
 			"Markdown":   {".md", ".markdown"},
 			"YAML":       {".yml", ".yaml"},
 			"JSON":       {".json"},
@@ -294,10 +294,9 @@ func (cc *CodeCounter) PrintReport() {
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Stats.Lines > sorted[j].Stats.Lines
 	})
-	fmt.Printf("📊 本项目Go-Web详细代码统计报告\n")
-	fmt.Printf("📁 目录: %s\n", cc.lastDir)
+	fmt.Printf("📊 本项目PgoAgent详细代码统计报告\n")
 	fmt.Println(strings.Repeat("=", 75))
-	fmt.Printf("%-15s %8s %12s %12s %8s\n", "语言", "文件数", "代码行数", "文件大小", "占比")
+	fmt.Printf("%-11s %8s %12s %12s %8s\n", "文件类型", "文件数", "代码行数", "文件大小", "占比")
 	fmt.Println(strings.Repeat("-", 75))
 
 	for _, item := range sorted {

@@ -5,12 +5,13 @@ from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage
 from langgraph.store.postgres import AsyncPostgresStore
 from agent.config import DATABASE_DSN
-from graph import create_graph
+from .graph import create_graph
 from agent.config import logger
 from typing import TypedDict
 import time
 import threading
 import queue
+from .config import animated_banner
 
 
 class Configurable(TypedDict):
@@ -260,7 +261,7 @@ async def main(user_config: UserConfig):
     if not await test_db_connection(DATABASE_DSN):
         logger.error("数据库连接失败，程序退出")
         return
-    if user_config:
+    if not user_config:
         logger.error(f"当前用户的配置信息为空，请传入对应参数")
         return
     # checkpointer 和 Store 都是上下文管理
@@ -282,7 +283,6 @@ async def main(user_config: UserConfig):
             print("=" * 60)
             init_state= await agent.get_conversation_history(user_config)
             total_token = init_state.get("CumulativeUsage", 0)
-            print(init_state)
             mode = user_config["configurable"].get("chat_mode", "normal")
             while True:
                 user_input = input("用户> ").strip()
@@ -339,6 +339,7 @@ async def main(user_config: UserConfig):
 
 
 if __name__ == "__main__":
+    animated_banner()
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略-专门对于win系统的
     # 测试用户的数据

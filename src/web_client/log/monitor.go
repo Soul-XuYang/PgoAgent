@@ -29,11 +29,11 @@ func NewMonitor() *Monitor { //
 		interval:  defaultInterval,
 	}
 }
-func (m *Monitor) StopMonitor() {
+func (m *Monitor) Stop() {
 	m.cancel() // 执行这个取消函数
 }
-func (m *Monitor) StartMonitor(path string) { // 开启一个新的线程
-	go func() {
+func (m *Monitor) Start(path string) { // 开启一个新的线程
+	go func() { // 开启一个新的线程
 		ticker := time.NewTicker(m.interval) // 创建定时计数器
 		defer ticker.Stop()                  // 最后程序要停止
 		gitignore, err := utils.NewGitIgnore(filepath.Join(path, ".gitignore"))
