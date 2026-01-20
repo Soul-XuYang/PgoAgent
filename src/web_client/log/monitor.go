@@ -1,10 +1,10 @@
 package log
 
 import (
+	"PgoAgent/utils"
 	"context"
 	"fmt"
 	"path/filepath"
-	"PgoAgent/utils"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,6 +32,8 @@ func NewMonitor() *Monitor { //
 func (m *Monitor) Stop() {
 	m.cancel() // 执行这个取消函数
 }
+
+// Start 启动监控程序，path为项目根目录，实际为代码历史的保存目录
 func (m *Monitor) Start(path string) { // 开启一个新的线程
 	go func() { // 开启一个新的线程
 		ticker := time.NewTicker(m.interval) // 创建定时计数器
@@ -54,7 +56,7 @@ func (m *Monitor) Start(path string) { // 开启一个新的线程
 				elapsed := time.Since(m.startTime)
 				days := int(elapsed.Hours()) / 24
 				hours := int(elapsed.Hours()) % 24
-				L().Info(fmt.Sprintf("当前程序已运行: %d天 %02d小时", days, hours))
+				L().Info(fmt.Sprintf("当前程序已运行: %d天%02d小时", days, hours))
 			case <-m.ctx.Done(): // m.ctx.Done()也是一个channel，当context被取消时会收到值
 				elapsed := time.Since(m.startTime)
 				days := int(elapsed.Hours()) / 24

@@ -1,9 +1,10 @@
-package grpc_client
-
+package config
+// 这里是对grpc的jwt进行封装，方便在其他地方使用
 import (
+	"context"
 	"time"
-    "PgoAgent/config"
 	"github.com/golang-jwt/jwt/v5"
+	"google.golang.org/grpc/metadata"
 )
 
 // JWTClaims JWT Claims 结构
@@ -15,8 +16,11 @@ type JWTClaims struct {
 
 // GenerateJWTToken 生成 JWT Token
 func GenerateJWTToken(userID string) (string, error) {
-	// 从环境变量读取 JWT 密钥
-	jwtToken:= config.EnvConfigHandler.JWTToken
+	// 从环境变量读取 JWT 密钥，如果加载失败则使用默认值
+	jwtToken := "MY_SECRET_KEY"
+	if EnvConfigHandler != nil && EnvConfigHandler.JWTToken != "" {
+		jwtToken = EnvConfigHandler.JWTToken
+	}
 
 	// 创建 Claims
 	claims := &JWTClaims{
@@ -31,4 +35,14 @@ func GenerateJWTToken(userID string) (string, error) {
 	// 生成 token
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(jwtToken)) // 签名并返回 token
+}
+
+// WithJWTToken 将 JWT token 绑定到 context，返回新的 context,如果开启了JWT验证，则必须使用该函数
+func WithJWTToken(ctx context.Context, userID string) (context.Context, error) {
+	token, err := GenerateJWTToken(userID)
+	if err != nil {
+		return nil, err
+	}
+	// 使用grpc的metadata将token绑定到context
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token), nil
 }

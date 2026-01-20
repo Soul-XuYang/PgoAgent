@@ -5,13 +5,13 @@ from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage
 from langgraph.store.postgres import AsyncPostgresStore
 from agent.config import DATABASE_DSN
-from .graph import create_graph
+from graph import create_graph
 from agent.config import logger
 from typing import TypedDict
 import time
 import threading
 import queue
-from .config import animated_banner
+from config import animated_banner
 
 
 class Configurable(TypedDict):
@@ -123,23 +123,30 @@ class AgentRunner:
 
     async def chat(self, user_input: str, user_config: UserConfig, cancel_listener: CancelListener = None) -> (
     str, int):
+        logger.info(f"AgentRunner.chat() 开始: user_input长度={len(user_input)}, user_config={user_config}")
         if not user_config:
             raise ValueError("请提供用户配置信息")
         chat_state = {
             "messages": [HumanMessage(content=user_input)],
             "context": {},
         }
+        logger.info(f"AgentRunner.chat() chat_state 创建完成")
 
         # 如果有对应的监听器，启动监听
         if cancel_listener:
             cancel_listener.start()
+            logger.info(f"AgentRunner.chat() cancel_listener 已启动")
 
         try:
+            logger.info(f"AgentRunner.chat() 准备调用 graph.ainvoke()")
             # 创建主任务
             main_task = asyncio.create_task(self._graph.ainvoke(chat_state, config=user_config))
+            logger.info(f"AgentRunner.chat() graph.ainvoke() 任务已创建，开始等待完成")
             # 轮询检查取消状态
+            poll_count = 0
             while not main_task.done():
                 if cancel_listener and cancel_listener.is_cancelled():
+                    logger.warning(f"AgentRunner.chat() 检测到取消信号")
                     main_task.cancel()
                     try:
                         await main_task
@@ -147,15 +154,25 @@ class AgentRunner:
                         pass
                     return "⚠️ 任务已被用户取消",  0
                 await asyncio.sleep(0.1)  # 避免busy-wait
+                poll_count += 1
+                if poll_count % 50 == 0:  # 每5秒打印一次
+                    logger.info(f"AgentRunner.chat() 等待中... 已等待 {poll_count * 0.1:.1f} 秒")
 
+            logger.info(f"AgentRunner.chat() graph.ainvoke() 任务完成，开始处理结果")
             result = main_task.result()
+            logger.info(f"AgentRunner.chat() 结果获取成功，messages数量={len(result.get('messages', []))}")
             final_msg = result["messages"][-1]
             final_token = result.get("usages", {}).get("total", 0)
+            logger.info(f"AgentRunner.chat() 准备返回: reply_length={len(final_msg.content)}, token={final_token}")
             return final_msg.content, final_token
 
+        except Exception as e:
+            logger.error(f"AgentRunner.chat() 发生异常: {e}", exc_info=True)
+            raise
         finally:
             if cancel_listener:
                 cancel_listener.stop()
+                logger.info(f"AgentRunner.chat() cancel_listener 已停止")
 
     async def chat_stream(self, user_input: str, user_config: UserConfig, cancel_listener: CancelListener = None):
         """流式返回响应内容"""
@@ -243,14 +260,18 @@ class AgentRunner:
                     summary="",
                 )
 
-async def test_db_connection(dsn: str) -> bool:
+async def test_db_connection(dsn: str, timeout: int = 10) -> bool:
     """直接测试数据库连接，快速失败"""
     try:
         logger.info(f"正在测试数据库连接...")
-        conn = await AsyncConnection.connect(dsn)
+        conn = await asyncio.wait_for(AsyncConnection.connect(dsn), timeout=timeout) # 给一个异步协程设置超时时间
+        await conn.close()
         await conn.close()
         logger.info("当前数据库连接成功!")
         return True
+    except TimeoutError:
+        logger.error("❌ 数据库连接超时，请检查数据库服务是否运行正常")
+        return False
     except Exception as e:
         logger.error(f"❌ 数据库连接失败: {e}")
         logger.error(f"   请检查 PostgreSQL 服务是否运行，以及 DATABASE_DSN 配置是否正确")
@@ -342,6 +363,6 @@ if __name__ == "__main__":
     animated_banner()
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略-专门对于win系统的
-    # 测试用户的数据
+    # 测试用户的数据 - 对应的对话ID和用户ID
     asyncio.run(main(user_config = {"configurable": {"thread_id": "002", "user_id": "user_003", "chat_mode": "stream"},"recursion_limit": 50  }))
     # 你好，我叫jack，请问你叫什么呢?

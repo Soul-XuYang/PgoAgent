@@ -39,8 +39,8 @@ type CodeCounter struct {
 func NewCodeCounter() *CodeCounter {
 	cc := &CodeCounter{
 		FileTypes: map[string][]string{
-			"Go":         {".go"},
-			"Python":     {".py", ".pyw"},
+			"Go":         {".go", ".mod", ".sum"},
+			"Python":     {".py", ".pyw", ".pyi"},
 			"JavaScript": {".js", ".jsx", ".ts", ".tsx", ".vue"},
 			"Java":       {".java"},
 			"C/C++":      {".c", ".cpp", ".cc", ".h", ".hpp"},
@@ -49,9 +49,10 @@ func NewCodeCounter() *CodeCounter {
 			"PHP":        {".php"},
 			"Ruby":       {".rb"},
 			"Rust":       {".rs"},
-			"Shell":      {".sh", ".bash", ".zsh",".bat"},
+			"Shell":      {".sh", ".bash", ".zsh", ".bat"},
 			"Markdown":   {".md", ".markdown"},
 			"YAML":       {".yml", ".yaml"},
+			"TOML":       {".toml"},
 			"JSON":       {".json"},
 			"XML":        {".xml"},
 			"SQL":        {".sql"},
@@ -61,7 +62,7 @@ func NewCodeCounter() *CodeCounter {
 		// 易错
 		IgnoreDirs: map[string]bool{ // 忽略的目录-这里是提前写死了
 			".venv":        true,
-            "chromadb":     true,
+			"chromadb":     true,
 			".git":         true,
 			"node_modules": true,
 			"vendor":       true,
@@ -117,8 +118,8 @@ func (cc *CodeCounter) Analyze(dir string, gitignore *GitIgnore) error { // 分�
 		}
 		name := d.Name() // 文件名
 
-		if d.IsDir() { 		// 跳过先前自定义的忽略目录
-			if cc.IgnoreDirs[name] { 
+		if d.IsDir() { // 跳过先前自定义的忽略目录
+			if cc.IgnoreDirs[name] {
 				return fs.SkipDir // 直接跳过文件夹
 			}
 			return nil
@@ -327,7 +328,7 @@ func (cc *CodeCounter) PrintReport() {
 	fmt.Println("历史记录:")
 	for index, node := range cc.history_record.GetAll() {
 		if r, ok := node.(map[string]string); ok {
-			fmt.Printf("索引:%d 路径: %s 文件数: %s 记录时间: %s\n",
+			fmt.Printf("索引:%d 路径: %s 文件数: %4s 记录时间: %s\n",
 				index+1, r["filepath"], r["count"], r["time"])
 		}
 	}
