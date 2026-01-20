@@ -227,15 +227,6 @@ async function handleSendMessage() {
     const content = messageInput.value.trim();
     if (!content) return;
 
-    // 如果没有当前对话，创建新对话
-    if (!currentConversationId) {
-        await createNewConversation();
-        if (!currentConversationId) {
-            alert('创建对话失败，请稍后重试');
-            return;
-        }
-    }
-
     // 获取对话模式
     const chatMode = document.querySelector('input[name="chatMode"]:checked').value;
 
@@ -243,42 +234,79 @@ async function handleSendMessage() {
     messageInput.value = '';
     messageInput.style.height = '24px';
 
-    // 显示用户消息
-    appendMessage('user', content);
+    // 如果没有当前对话，创建新对话（首次发送消息时）
+    if (!currentConversationId) {
+        try {
+            const response = await fetch(`${API_BASE}/conversations`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    conversation_id: '', // 首次创建时为空，后端自动生成
+                    user_query: content // 用户的首条消息
+                }),
+            });
 
-    try {
-        const response = await fetch(`${API_BASE}/conversations/${currentConversationId}/messages`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                content: content,
-                chat_mode: chatMode
-            }),
-        });
-
-        if (response.ok) {
-            if (chatMode === 'stream') {
-                // 流式响应处理
-                await handleStreamResponse(response);
-            } else {
-                // 非流式响应处理
+            if (response.ok) {
                 const data = await response.json();
-                if (data.response) {
-                    appendMessage('assistant', data.response, data.created_at, data.token_usage);
-                }
+                currentConversationId = data.conversation_id;
+                
+                // 重新加载对话列表（包含新创建的对话）
+                loadConversations();
+                
+                // 重新加载该对话的消息（因为后端已经写入了首条 user 和 assistant 消息）
+                await loadConversation(currentConversationId);
+            } else {
+                const error = await response.json();
+                alert(error.error || '创建对话失败，请稍后重试');
+                return;
             }
-            // 重新加载对话列表以更新最后消息时间
-            loadConversations();
-        } else {
-            const error = await response.json();
-            alert(error.error || '发送失败');
+        } catch (error) {
+            console.error('Failed to create conversation:', error);
+            alert('创建对话失败，请稍后重试');
+            return;
         }
-    } catch (error) {
-        console.error('Failed to send message:', error);
-        alert('发送失败，请稍后重试');
+    } else {
+        // 已有对话，继续发送消息
+        // 显示用户消息
+        appendMessage('user', content);
+
+        try {
+            const response = await fetch(`${API_BASE}/conversations/${currentConversationId}/messages`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    content: content,
+                    chat_mode: chatMode
+                }),
+            });
+
+            if (response.ok) {
+                if (chatMode === 'stream') {
+                    // 流式响应处理
+                    await handleStreamResponse(response);
+                } else {
+                    // 非流式响应处理
+                    const data = await response.json();
+                    if (data.response) {
+                        appendMessage('assistant', data.response, data.created_at, data.token_usage);
+                    }
+                }
+                // 重新加载对话列表以更新最后消息时间
+                loadConversations();
+            } else {
+                const error = await response.json();
+                alert(error.error || '发送失败');
+            }
+        } catch (error) {
+            console.error('Failed to send message:', error);
+            alert('发送失败，请稍后重试');
+        }
     }
 }
 
@@ -353,34 +381,9 @@ async function handleStreamResponse(response) {
     }
 }
 
-// 创建新对话
-async function createNewConversation() {
-    try {
-        const response = await fetch(`${API_BASE}/conversations`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                conversation_name: '新对话'
-            }),
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            currentConversationId = data.conversation_id;
-            // 重新加载对话列表
-            loadConversations();
-            // 清空消息列表
-            messagesList.innerHTML = '';
-            messagesList.style.display = 'none';
-            emptyState.style.display = 'block';
-        }
-    } catch (error) {
-        console.error('Failed to create conversation:', error);
-    }
-}
+// 注意：createNewConversation 函数已移除
+// 现在创建对话的逻辑已整合到 handleSendMessage 中
+// 当用户首次发送消息时，会自动创建对话并写入首条消息
 
 // 添加消息到界面
 function appendMessage(role, content, createdAt, tokenUsage) {

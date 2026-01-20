@@ -35,6 +35,7 @@ type Conversations struct {
     User Users `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
     
 	ConversationName string `gorm:"size:64;not null"`
+    // 这个用指针是为了判断是否为空
     LastMessageID *uint64    `gorm:"index;null"`
     LastMsgTime   *time.Time `gorm:"type:timestamp;null;index"`
     Messages []Messages `gorm:"foreignKey:ConversationID"`

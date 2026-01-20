@@ -32,8 +32,8 @@ func SetupRouter() *gin.Engine {
 	// 对话相关路由（需要认证）
 	conversations := apiV1.Group("/conversations", middlewares.JWTAuthMiddleware())
 	{
-		conversations.GET("", controllers.GetConversations)
-		conversations.POST("", controllers.CreateConversation)
+		conversations.GET("/create", controllers.CreateConversations)
+		conversations.POST("/:id/messages", controllers.SendMessage)
 
 	}
 

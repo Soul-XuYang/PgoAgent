@@ -7,10 +7,12 @@ import (
     "PgoAgent/log"
     "go.uber.org/zap"
     "google.golang.org/protobuf/types/known/emptypb"
-    agent_grpc "PgoAgent/agent_grpc" //对应的proto文件
+    agent_grpc "PgoAgent/agent_grpc" //对应的proto文件-生成的结构体
 )
-// 这里请求都用现有的结构体格式
+// 这里请求都用现有的结构体格式-响应的格式严格按照GRPC定义的类型来写
 
+
+// 构建服务
 // Chat 非流式对话
 // 注意：ctx 应该已经通过 WithJWTToken 绑定了 JWT token
 func (c *Client) Chat(ctx context.Context, userInput string, userID, threadID string, opts ...ChatOption) (*ChatResponse, error) {
@@ -94,6 +96,7 @@ func (c *Client) ChatStream(ctx context.Context, userInput string, userID, threa
 
 		// 调用处理函数
 		if handler != nil {
+			//处理每个数据片
 			if err := handler(&StreamChunk{
 				Output:        chunk.Output,
 				FinalResponse: chunk.FinalResponse,
