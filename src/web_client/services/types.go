@@ -16,7 +16,7 @@ type StreamChunk struct {
 }
 
 // StreamHandler 流式处理函数
-type StreamHandler func(chunk *StreamChunk) error // 流式响应
+type StreamHandler func(chunk *StreamChunk) error // 流式响应,每个增量的方法
 
 // ConversationPair 角色对话内容列表
 type ConversationPair struct {
