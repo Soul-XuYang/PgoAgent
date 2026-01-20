@@ -1,28 +1,28 @@
 version = "v0.0.3"
 
 
-# 开发环境数据库配置
+# 开发环境数据库配置 - 类型说明作为参考，并非实际的数据库配置，相关DSN请放入.env文件里
 [database.dev]
 type ="postgresql"
 host = "localhost"
 port = 5432
 user = "postgres"
-password = "123456"
 db_name = "postgres"
 
-# 继承通用配置（TOML本身不支持继承，可在代码中合并）
 
-# 生产环境数据库配置
-[database.prod]
-type ="postgresql"
-host = ""
-port = 1234
-user = ""
-password = ""
-db_name = ""
+# Go客户端配置
+# 这里是go程序对前端的页面端口设置
+[web.server]
+host = "localhost"
+port = 8080
+timeout = 30
+max_idle_conns = 20
+max_open_conns = 100
+conn_max_lifetime_hours = 1
+
 
 # Python服务端配置
-[grpc.server]
+[agent.server]
 host = "localhost"
 port = 50051
 max_threads = 16
@@ -36,15 +36,10 @@ global_burst = 200
 enable_user_rate_limit = true
 user_rate_limit = 60
 user_burst = 120
-use_tls = true
 
 
-# Go客户端配置
-[web.server]
-host = "localhost"
-port = 8080
-timeout = 30
-use_tls = true
+
+
 
 # 是否使用本地部署的大模型
 [model.use]

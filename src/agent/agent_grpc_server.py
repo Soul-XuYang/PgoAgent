@@ -87,7 +87,9 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
     async def Chat(self, request,context): # 这个方法严格遵循proto文件中定义的接口
         """非流式对话"""
         try:
+            logger.info(f"GRPC | Chat 请求收到: user_id={request.user_config.user_id}, thread_id={request.user_config.thread_id}, input_length={len(request.user_input)}")
             if request.user_config.thread_id == "" or request.user_config.user_id == "":
+                logger.warning("GRPC | Chat 请求缺少 user_config")
                 return agent_pb2.ChatResponse(
                     success=False,
                     error_message="user_config is null"
@@ -113,24 +115,33 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 self.cancel_listeners_table[thread_key] = cancel_listener
 
             try:
+                logger.info(f"GRPC | Chat 开始处理，调用 agent_runner.chat()")
+                logger.info(f"GRPC | Chat 参数: user_input='{request.user_input[:50]}...', user_config={user_config}")
                 agent_runner = AgentRunner(self.shared_graph)
+                logger.info(f"GRPC | Chat AgentRunner 创建成功，开始调用 chat()")
+                start_time = time.time()
                 reply, token_usage = await agent_runner.chat(
                     request.user_input,
                     user_config,
                     cancel_listener
                 )
-                return agent_pb2.ChatResponse(
+                elapsed_time = time.time() - start_time
+                logger.info(f"GRPC | Chat 处理完成，耗时 {elapsed_time:.2f}秒，reply_length={len(reply)}, token_usage={token_usage}")
+                logger.info(f"GRPC | Chat 准备返回响应")
+                response = agent_pb2.ChatResponse(
                     reply=reply,
                     token_usage=token_usage,
                     success=True
                 )
+                logger.info(f"GRPC | Chat 响应对象创建成功，准备返回")
+                return response
             finally:
                 async with self._table_lock:
                     if thread_key in self.cancel_listeners_table:
-                        # 可选：检查是否是自己的 listener（更安全）
+                        # 检查是否是自己的 listener（更安全）
                         current_listener = self.cancel_listeners_table[thread_key]
-                    if current_listener is cancel_listener:
-                        del self.cancel_listeners_table[thread_key]
+                        if current_listener is cancel_listener:
+                            del self.cancel_listeners_table[thread_key]
 
 
         except Exception as e:
@@ -305,7 +316,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
             enable_jwt =SERVER_CONFIG.enable_jwt
             enable_global_rate_limit = SERVER_CONFIG.enable_global_rate_limit
             enable_user_rate_limit = SERVER_CONFIG.enable_user_rate_limit
-            use_tls = SERVER_CONFIG.use_tls
+            # TLS 现在默认启用，不再需要配置开关
 
             interceptors = []
             skip_methods = ["GetServerInfo"]
@@ -318,7 +329,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
                 interceptors.append(ip_rate_interceptor)
                 logger.info("gRPC: 全体限流拦截器已启用")
             if enable_jwt:
-                secret_key = os.getenv("JWT_TOKEN", "MY_SECRET_KEY")
+                secret_key = os.getenv("GRPC_TOKEN", "MY_SECRET_KEY")
                 jwt_interceptor = JWTInterceptor(
                     secret_key=secret_key,
                     token_header="authorization",
@@ -355,20 +366,21 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
             )
 
             listen_addr = f'{host}:{port}'
+            # 默认使用 TLS，先添加端口，然后启动服务器（gRPC Python 的正确顺序）
+            creds = load_server_credentials()  # 加载 TLS 证书
+            server.add_secure_port(listen_addr, creds)
             await server.start()
-            if use_tls:
-                creds = load_server_credentials()  # 依据实际所需传入对应的参数
-                server.add_secure_port(listen_addr, creds)
-                logger.info(f"gRPC: 服务器已启动（TLS），运行地址为: {listen_addr}")
-            else:
-                server.add_insecure_port(listen_addr)
-                logger.info(f"gRPC: 服务器已启动（非加密），运行地址为: {listen_addr}")
-
+            logger.info(f"gRPC: 服务器已启动（TLS），运行地址为: {listen_addr}")
             try:
                 await server.wait_for_termination()
             except KeyboardInterrupt:
                 logger.info("当前正在关闭服务器中...")
                 await server.stop(5)
+            finally:
+                await store.teardown()
+                await checkpointer.teardown()
+
+
 
 
 if __name__ == "__main__":
@@ -377,8 +389,6 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:
         asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy()) # 其他系统使用默认策略
-
-    print(SERVER_CONFIG)
     asyncio.run(serve(host= SERVER_CONFIG.host,
         port=SERVER_CONFIG.port,
         DSN=DATABASE_DSN,

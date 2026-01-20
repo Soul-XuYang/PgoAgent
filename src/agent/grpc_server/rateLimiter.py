@@ -18,7 +18,7 @@ class TokenBucket:
         if capacity <= 0:
             raise ValueError("capacity must be > 0")
         self.capacity = int(capacity)
-        self.tokens = int(capacity)
+        self.tokens = int(capacity) # 初始化是全满的令牌
         self.ns_per_token = max(1, int(NS / float(rate_per_sec))) # 每个令牌的纳秒数,NS是1秒的纳秒数
         self.last_ns = time.monotonic_ns()       # self.last_ns = time.monotonic_ns()当前的纳秒数
 

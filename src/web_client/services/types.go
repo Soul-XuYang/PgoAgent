@@ -1,5 +1,5 @@
-// src/web_client/grpc_client/types.go
-package grpc_client
+package services
+
 
 // ChatResponse 对话响应
 type ChatResponse struct {

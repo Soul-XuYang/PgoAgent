@@ -86,17 +86,21 @@ class JWTInterceptor(grpc.aio.ServerInterceptor):
             new_metadata.append(("user_id", payload.get("user_id", "")))
             new_metadata.append(("user_name", payload.get("user_name", "")))
 
-            # 更新 handler_call_details
-            handler_call_details = grpc.HandlerCallDetails(
-                method=handler_call_details.method,
-                invocation_metadata=new_metadata,
-                timeout=handler_call_details.timeout,
-                request_metadata=handler_call_details.request_metadata
-            )
+            # HandlerCallDetails 不能直接构造，创建一个包装类来传递更新的 metadata
+            class UpdatedHandlerCallDetails:
+                def __init__(self, original_details, new_metadata):
+                    self.method = original_details.method
+                    self.invocation_metadata = new_metadata
+                    # 保留其他可能的属性
+                    for attr in ['timeout', 'request_metadata']:
+                        if hasattr(original_details, attr):
+                            setattr(self, attr, getattr(original_details, attr))
+            
+            updated_details = UpdatedHandlerCallDetails(handler_call_details, new_metadata)
 
             logger.debug(f"JWT拦截器: 方法 {method_name} 认证成功，用户: {payload.get('user_id')}")
 
-            return await continuation(handler_call_details) # 异步等待处理
+            return await continuation(updated_details) # 使用更新后的 details
 
         except jwt.ExpiredSignatureError: # 捕获过期的token错误
             logger.warning(f"JWT拦截器: token 已过期")

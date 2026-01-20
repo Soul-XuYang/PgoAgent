@@ -1,7 +1,9 @@
 import tomllib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple, Any
+from dotenv import load_dotenv
 
 
 @dataclass
@@ -53,28 +55,9 @@ class Server:
     user_burst: int
     send_size:int
     receive_size:int
-    # 是否开启 TLS（仅影响是否使用 add_secure_port），证书路径可以后续再扩展
-    use_tls: bool
+    # 注意：TLS 现在默认启用，不再需要配置开关
 
-def load_database_config(env: str = "dev")-> tuple[DatabaseConfig, str]:
-    """读取相关的配置文件"""
-    try:
-        config_path = Path(__file__).parent.parent.parent. parent / "config.toml"
-        with open(config_path, "rb") as f: # 二进制加载
-            config = tomllib.load(f)
-        db_config = config["database"][env]
-        return DatabaseConfig(
-            type=db_config["type"],
-            host=db_config["host"],
-            port=db_config["port"],
-            user=db_config["user"],
-            password=db_config["password"],
-            dbname=db_config["db_name"]
-        ),config["version"]
-    except FileNotFoundError:
-        raise FileNotFoundError(f"配置文件未找到")
-    except KeyError as e:
-        raise ValueError(f"配置文件缺少必要的字段: {e}")
+
 def load_model_use() -> ModelUseConfig:
     """
     读取 config.toml 中 [model.use] 配置，判断是否使用本地部署的大模型。
@@ -167,8 +150,30 @@ def load_rerank_model() -> RerankModelConfig:
         raise ValueError(f"配置文件缺少必要的字段: {e}")
 
 def get_dsn(env:str ='dev')->tuple[str,str]:
-    database_config,version = load_database_config(env)
-    return f"{database_config.type}://{database_config.user}:{database_config.password}@{database_config.host}:{database_config.port}/{database_config.dbname}",version
+    """
+    优先从.env文件读取DATABASE_URL，如果不存在则从config.toml读取配置
+    这样更安全，避免敏感信息泄露到配置文件
+    """
+    # 加载.env文件
+    config_path = Path(__file__).parent.parent.parent.parent / ".env"
+    if config_path.exists():
+        load_dotenv(config_path)
+    
+    # 优先从环境变量读取
+    database_url = os.getenv("DATABASE_URL")
+    # 从config.toml获取version
+    config_path = Path(__file__).parent.parent.parent.parent / "config.toml"
+    with open(config_path, "rb") as f:
+        config = tomllib.load(f)
+        version = config.get("version", "unknown")
+    if not database_url:
+        raise ValueError(".env文件里DATABASE_URL 未找到")
+    if not version:
+        raise ValueError("config.toml文件里的PgoAgent版本号未找到")
+    return database_url, version
+
+
+
 
 def get_server_config() -> Server:
     """
@@ -179,7 +184,7 @@ def get_server_config() -> Server:
         with open(config_path, "rb") as f:
             config = tomllib.load(f)
 
-        server_cfg = config["grpc"]["server"]
+        server_cfg = config["agent"]["server"]
 
         return Server(
             host=server_cfg["host"],
@@ -194,7 +199,7 @@ def get_server_config() -> Server:
             max_threads=server_cfg["max_threads"],
             send_size=server_cfg["send_size"]*1024*1024,
             receive_size=server_cfg["receive_size"]*1024*1024,
-            use_tls=server_cfg.get("use_tls", False),
+            # TLS 现在默认启用
         )
     except FileNotFoundError:
         raise FileNotFoundError("配置文件未找到")

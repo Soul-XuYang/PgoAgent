@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PgoAgent - AI Agent 平台</title>
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-wrapper">
+            <!-- Logo和标题 -->
+            <div class="auth-header">
+                <div class="logo-wrapper">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <h1 class="auth-title">PgoAgent</h1>
+                </div>
+                <p class="auth-subtitle">AI Agent 智能助手平台</p>
+            </div>
+
+            <!-- 登录表单 -->
+            <div id="loginForm" class="auth-form active">
+                <h2 class="form-title">登录</h2>
+                <form id="loginFormElement" class="form">
+                    <div class="form-group">
+                        <label for="loginUsername">
+                            <svg class="label-icon" viewBox="0 0 20 20" fill="none">
+                                <path d="M10 10C12.7614 10 15 7.76142 15 5C15 2.23858 12.7614 0 10 0C7.23858 0 5 2.23858 5 5C5 7.76142 7.23858 10 10 10Z" fill="currentColor" opacity="0.4"/>
+                                <path d="M10 12C5.58172 12 2 14.6863 2 18V20H18V18C18 14.6863 14.4183 12 10 12Z" fill="currentColor" opacity="0.4"/>
+                            </svg>
+                            用户名
+                        </label>
+                        <input 
+                            type="text" 
+                            id="loginUsername" 
+                            name="username" 
+                            required 
+                            autocomplete="username"
+                            placeholder="请输入用户名"
+                            minlength="3"
+                            maxlength="32">
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">
+                            <svg class="label-icon" viewBox="0 0 20 20" fill="none">
+                                <rect x="6" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+                                <path d="M8 8V5C8 3.34315 9.34315 2 11 2H13C14.6569 2 16 3.34315 16 5V8" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                            </svg>
+                            密码
+                        </label>
+                        <input 
+                            type="password" 
+                            id="loginPassword" 
+                            name="password" 
+                            required 
+                            autocomplete="current-password"
+                            placeholder="请输入密码"
+                            minlength="6"
+                            maxlength="64">
+                    </div>
+                    <div id="loginError" class="error-message" style="display: none;"></div>
+                    <button type="submit" class="btn-primary" id="loginBtn">
+                        <span class="btn-text">登录</span>
+                        <span class="btn-loading" style="display: none;">登录中...</span>
+                    </button>
+                </form>
+                <div class="form-footer">
+                    <p>还没有账号？<a href="#" id="switchToRegister" class="link">立即注册</a></p>
+                </div>
+            </div>
+
+            <!-- 注册表单 -->
+            <div id="registerForm" class="auth-form">
+                <h2 class="form-title">注册</h2>
+                <form id="registerFormElement" class="form">
+                    <div class="form-group">
+                        <label for="registerUsername">
+                            <svg class="label-icon" viewBox="0 0 20 20" fill="none">
+                                <path d="M10 10C12.7614 10 15 7.76142 15 5C15 2.23858 12.7614 0 10 0C7.23858 0 5 2.23858 5 5C5 7.76142 7.23858 10 10 10Z" fill="currentColor" opacity="0.4"/>
+                                <path d="M10 12C5.58172 12 2 14.6863 2 18V20H18V18C18 14.6863 14.4183 12 10 12Z" fill="currentColor" opacity="0.4"/>
+                            </svg>
+                            用户名
+                        </label>
+                        <input 
+                            type="text" 
+                            id="registerUsername" 
+                            name="username" 
+                            required 
+                            autocomplete="username"
+                            placeholder="3-32个字符，仅支持字母和数字"
+                            pattern="[A-Za-z0-9]+"
+                            minlength="3"
+                            maxlength="32">
+                        <small class="form-hint">仅支持字母和数字，3-32个字符</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword">
+                            <svg class="label-icon" viewBox="0 0 20 20" fill="none">
+                                <rect x="6" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+                                <path d="M8 8V5C8 3.34315 9.34315 2 11 2H13C14.6569 2 16 3.34315 16 5V8" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                            </svg>
+                            密码
+                        </label>
+                        <input 
+                            type="password" 
+                            id="registerPassword" 
+                            name="password" 
+                            required 
+                            autocomplete="new-password"
+                            placeholder="至少6个字符"
+                            minlength="6"
+                            maxlength="64">
+                        <small class="form-hint">至少6个字符</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">
+                            <svg class="label-icon" viewBox="0 0 20 20" fill="none">
+                                <rect x="6" y="8" width="8" height="8" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.4"/>
+                                <path d="M8 8V5C8 3.34315 9.34315 2 11 2H13C14.6569 2 16 3.34315 16 5V8" stroke="currentColor" stroke-width="1.5" opacity="0.4"/>
+                            </svg>
+                            确认密码
+                        </label>
+                        <input 
+                            type="password" 
+                            id="confirmPassword" 
+                            name="confirmPassword" 
+                            required 
+                            autocomplete="new-password"
+                            placeholder="请再次输入密码"
+                            minlength="6"
+                            maxlength="64">
+                    </div>
+                    <div id="registerError" class="error-message" style="display: none;"></div>
+                    <button type="submit" class="btn-primary" id="registerBtn">
+                        <span class="btn-text">注册</span>
+                        <span class="btn-loading" style="display: none;">注册中...</span>
+                    </button>
+                </form>
+                <div class="form-footer">
+                    <p>已有账号？<a href="#" id="switchToLogin" class="link">立即登录</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/auth.js?v=2"></script>
+</body>
+</html>

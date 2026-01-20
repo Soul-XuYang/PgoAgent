@@ -30,7 +30,14 @@ max_tool_output_chars = 500
 MAX_TOOL_RESULT_CHARS = 500
 latest_chat_size = 16
 
-def sliding_window_add(window: list[BaseMessage], data: BaseMessage, window_length: int = latest_chat_size) -> list[BaseMessage]:
+
+def sliding_window_add(window: list[BaseMessage], data: BaseMessage, window_length: int = latest_chat_size) -> list[
+    BaseMessage]:
+    # 在添加消息之前检查是否为空
+    if isinstance(data, HumanMessage):
+        msg_content = getattr(data, "content", "") or ""
+        if not msg_content.strip():
+            return window  # 如果是空的 HumanMessage，则不添加
     if len(window) >= window_length:
         window.pop(0)  # 弹出第一个元素
     window.append(data)
@@ -69,11 +76,12 @@ async def summarization_node(
     state["current_plan_step"] = 0
     state["usages"] = {}
     state["agent_loop_count"] = 0  # 重置循环计数器
-    state["step_status"] = "continue"# 初始化状态
+    state["step_status"] = "continue"  # 初始化状态
     state["tool_attempts"] = 0  # 初始化RAG尝试次数
     # 确保对话记录存在
     if "conversation_pairs" not in state:
         state["conversation_pairs"] = []
+
     # 构建base_node节点
     base_node = SummarizationNode(
         token_counter=count_tokens_approximately,
@@ -92,14 +100,51 @@ async def summarization_node(
             # 只添加非空的用户消息，避免空消息导致 API 调用失败-易错点
             msg_content = getattr(msg, "content", "") or ""
             if msg_content.strip():
-                state["conversation_pairs"] = sliding_window_add(state["conversation_pairs"], msg)
+                state["conversation_pairs"] = sliding_window_add(state["conversation_pairs"], msg) # 添加到最近的对话记录
                 ctx["current_user_question"] = msg.content
                 break
     total_tokens = count_tokens_approximately(state["messages"])
 
-    if total_tokens <= max_tokens*0.6 and len(state["conversation_pairs"]) < latest_chat_size:
+    if total_tokens <= max_tokens * 0.6 and len(state["conversation_pairs"]) < latest_chat_size:
         return state
+    # 进入到总结节点-故而必须清洗
+    original_messages = state.get("messages", [])
+    cleaned_messages: list[BaseMessage] = []
+    for msg in original_messages:
+        #  丢弃空 HumanMessage
+        if isinstance(msg, HumanMessage):
+            msg_content = getattr(msg, "content", "") or ""
+            if not msg_content.strip():  # 直接跳过
+                continue
+            # HumanMessage 使用原对象，保留其 id
+            if getattr(msg, "id", None) is None:
+                msg.id = str(uuid.uuid4())
+            cleaned_messages.append(msg)  # 拼接
+            continue
 
+        # 2) ✅把 ToolMessage 转成普通文本消息，保留语义信息用于总结
+        if isinstance(msg, ToolMessage):
+            tool_name = getattr(msg, "name", "") or "unknown_tool"
+            tool_content = (getattr(msg, "content", "") or "").strip()
+            new_msg = SystemMessage(content=f"[工具输出: {tool_name}]\n{tool_content}")
+            # 为新消息补充 id（优先继承原 ToolMessage 的 id）
+            new_msg.id = getattr(msg, "id", None) or str(uuid.uuid4())
+            cleaned_messages.append(new_msg)
+            continue
+
+        # 3) ✅把带 tool_calls 的 AIMessage “降级”为普通 AIMessage（清空 tool_calls）
+        if isinstance(msg, AIMessage) and (getattr(msg, "tool_calls", None) or []):
+            new_msg = AIMessage(content=getattr(msg, "content", "") or "")
+            new_msg.id = getattr(msg, "id", None) or str(uuid.uuid4())
+            cleaned_messages.append(new_msg)
+            continue
+
+        # 4) 其它消息原样保留，但要确保有 id
+        if getattr(msg, "id", None) is None:
+            msg.id = str(uuid.uuid4())
+        cleaned_messages.append(msg)
+
+    state["messages"] = cleaned_messages
     new_state = await base_node.ainvoke(state)  # 注意这里还是对整体的msg进行总结
     summary_msg = new_state["messages"][0]
 

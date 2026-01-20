@@ -1,18 +1,16 @@
-package grpc_client
+package config
 
 import (
-	"PgoAgent/config"
+
 	"PgoAgent/log"
 	"context"
 	"fmt"
 	"testing" //测试包
+	"time"
+	Client "PgoAgent/services" 
 )
-
 const (
-	KB = 1024
-	MB = 1024 * 1024
-	GB = 1024 * 1024 * 1024
-	TB = 1024 * 1024 * 1024 * 1024
+	DefaultTimeout = 5 * time.Minute
 )
 
 // TestClient_Connection 测试客户端连接
@@ -24,12 +22,12 @@ func TestClient_Connection(t *testing.T) {
 	defer log.Sync()
 
 	// 检查配置加载错误
-	if config.LoadErr != nil {
-		t.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", LoadErr)
 	}
 
 	// 创建客户端
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -62,11 +60,11 @@ func TestClient_Chat(t *testing.T) {
 	}
 	defer log.Sync()
 
-	if config.LoadErr != nil {
-		t.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", LoadErr)
 	}
 
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -74,6 +72,12 @@ func TestClient_Chat(t *testing.T) {
 
 	ctx, cancel := client.WithTimeout(DefaultTimeout)
 	defer cancel()
+
+	// 生成 JWT token 并绑定到 ctx
+	ctx, err = WithJWTToken(ctx, "test_user_001")
+	if err != nil {
+		t.Fatalf("Failed to generate JWT token: %v", err)
+	}
 
 	// 测试基本对话
 	resp, err := client.Chat(ctx, "你好", "test_user_001", "test_thread_001")
@@ -90,8 +94,8 @@ func TestClient_Chat(t *testing.T) {
 
 	// 测试带选项的对话
 	resp2, err := client.Chat(ctx, "请介绍一下你自己", "test_user_001", "test_thread_002",
-		SetChatMode("normal"),
-		SetRecursionLimit(30),
+		Client.SetChatMode("normal"),
+		Client.SetRecursionLimit(30),
 	)
 	if err != nil {
 		t.Fatalf("Chat with options failed: %v", err)
@@ -113,11 +117,11 @@ func TestClient_ChatStream(t *testing.T) {
 	}
 	defer log.Sync()
 
-	if config.LoadErr != nil {
-		t.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		t.Fatalf("Failed to load config: %v", LoadErr)
 	}
 
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -126,11 +130,17 @@ func TestClient_ChatStream(t *testing.T) {
 	ctx, cancel := client.WithTimeout(DefaultTimeout)
 	defer cancel()
 
-	var chunks []*StreamChunk
-	var finalChunk *StreamChunk
+	// 生成 JWT token 并绑定到 ctx
+	ctx, err = WithJWTToken(ctx, "user_003")
+	if err != nil {
+		t.Fatalf("Failed to generate JWT token: %v", err)
+	}
+
+	var chunks []*Client.StreamChunk
+	var finalChunk *Client.StreamChunk
 
 	err = client.ChatStream(ctx, "你好，请介绍一下你自己", "user_003", "002",
-		func(chunk *StreamChunk) error {
+		func(chunk *Client.StreamChunk) error {
 			chunks = append(chunks, chunk)
 			if chunk.FinalResponse {
 				finalChunk = chunk
@@ -139,7 +149,7 @@ func TestClient_ChatStream(t *testing.T) {
 			}
 			return nil
 		},
-		SetRecursionLimit(50),
+		Client.SetRecursionLimit(50),
 	)
 
 	if err != nil {
@@ -169,11 +179,11 @@ func TestClient_GetConversationHistory(t *testing.T) {
 	}
 	defer log.Sync()
 
-	if config.LoadErr != nil {
-		t.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		t.Fatalf("Failed to load config: %v",LoadErr)
 	}
 
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -181,6 +191,12 @@ func TestClient_GetConversationHistory(t *testing.T) {
 
 	ctx, cancel := client.WithTimeout(DefaultTimeout)
 	defer cancel()
+
+	// 生成 JWT token 并绑定到 ctx
+	ctx, err = WithJWTToken(ctx, "user_003")
+	if err != nil {
+		t.Fatalf("Failed to generate JWT token: %v", err)
+	}
 
 	// 获取历史
 	history, err := client.GetConversationHistory(ctx, "user_003", "002")
@@ -243,15 +259,14 @@ func TestClient_GetServerInfo(t *testing.T) {
 	}
 	defer log.Sync()
 
-	if config.LoadErr != nil {
-		t.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		t.Fatalf("Failed to load config: %v",LoadErr)
 	}
-	fmt.Println("client has created successfully: ", config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port)
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	fmt.Println("client has created successfully: ", ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB) 
 	if err != nil {
 		t.Fatalf("Failed to create client connection: %v", err)
 	}
-	fmt.Println("client has created successfully")
 	defer client.Close()
 
 	ctx, cancel := client.WithTimeout(DefaultTimeout)
@@ -277,17 +292,23 @@ func BenchmarkClient_Chat(b *testing.B) {
 		b.Fatalf("Failed to init log: %v", err)
 	}
 
-	if config.LoadErr != nil {
-		b.Fatalf("Failed to load config: %v", config.LoadErr)
+	if LoadErr != nil {
+		b.Fatalf("Failed to load config: %v",LoadErr)
 	}
 
-	client, err := NewClient(config.ConfigHandler.GRPC.Server.Host, config.ConfigHandler.GRPC.Server.Port, config.ConfigHandler.GRPC.Server.SendSize*MB, config.ConfigHandler.GRPC.Server.ReceiveSize*MB)
+	client, err := Client.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port,ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	ctx := context.Background() //基础的空上下文
+	// 生成 JWT token 并绑定到 ctx（在循环外生成一次，避免每次循环都生成）
+	ctx, err = WithJWTToken(ctx, "bench_user")
+	if err != nil {
+		b.Fatalf("Failed to generate JWT token: %v", err)
+	}
+
 	// 重置计时器以排除初始化时间
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
