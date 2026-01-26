@@ -29,12 +29,28 @@ func SetupRouter() *gin.Engine {
 		auth.DELETE("/delete", middlewares.JWTAuthMiddleware(), controllers.DeleteUser)
 	}
 
-	// 对话相关路由（需要认证）
-	conversations := apiV1.Group("/conversations", middlewares.JWTAuthMiddleware())
+	// 用户信息相关（需要认证）
+	profile := apiV1.Group("/profile", middlewares.JWTAuthMiddleware())
 	{
-		conversations.GET("/create", controllers.CreateConversations)
-		conversations.POST("/:id/messages", controllers.SendMessage)
+		profile.GET("", controllers.GetInfo)
+		profile.GET("/store", controllers.GetUserLongTermMemory)
+		profile.POST("/store", controllers.SetUserLongTermMemory)
+		profile.DELETE("/store",controllers.DeleteUserLongTermMemory)
+	}
 
+	// 对话相关路由（需要认证）
+	conversations := apiV1.Group("/conversations", middlewares.JWTAuthMiddleware()) //认证中间件
+	{
+		// 列出当前用户的对话列表
+		conversations.GET("", controllers.ListConversations)
+		// 创建会话并写入首条消息
+		conversations.POST("", controllers.CreateConversations)
+		// 获取指定会话下的消息列表
+		conversations.GET("/:id/messages", controllers.ListConversationMessages)
+		// 继续在已有会话下发消息
+		conversations.POST("/:id/messages", controllers.SendMessage)
+		// 删除指定会话
+		conversations.DELETE("/:id", controllers.DeleteConversation)
 	}
 
 	// 聊天页面路由（需要认证）

@@ -116,16 +116,17 @@ body {
 }
 
 .conversation-item {
-    padding: 10px 12px;
+    padding: 8px 8px;
     margin-bottom: 4px;
     border-radius: 8px;
     font-size: 14px;
     color: var(--text-secondary);
     cursor: pointer;
     transition: background 0.15s ease;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
 }
 
 .conversation-item:hover {
@@ -135,6 +136,72 @@ body {
 .conversation-item.active {
     background: var(--active-bg);
     color: var(--primary);
+}
+
+.conversation-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.conversation-menu-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.conversation-menu-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text-secondary);
+}
+
+.conversation-menu-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.conversation-menu {
+    position: absolute;
+    z-index: 20;
+    min-width: 140px;
+    padding: 4px 0;
+    margin-top: 4px;
+    border-radius: 8px;
+    background: var(--bg-primary);
+    box-shadow: var(--shadow-md);
+}
+
+.conversation-menu-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.conversation-menu-item:hover {
+    background: var(--hover-bg);
+}
+
+.conversation-menu-item.danger {
+    color: #e54848;
 }
 
 .conversation-date-group {
@@ -170,6 +237,13 @@ body {
     min-width: 0;
 }
 
+.user-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
 .user-avatar {
     width: 32px;
     height: 32px;
@@ -197,28 +271,34 @@ body {
 }
 
 .btn-settings {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     border: none;
     background: transparent;
-    border-radius: 6px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     color: var(--text-secondary);
-    transition: all 0.15s ease;
+    transition: all 0.2s ease;
     flex-shrink: 0;
+    position: relative;
 }
 
 .btn-settings:hover {
     background: var(--hover-bg);
-    color: var(--text-primary);
+    color: var(--primary);
+    transform: rotate(90deg);
+}
+
+.btn-settings:active {
+    transform: rotate(90deg) scale(0.95);
 }
 
 .btn-settings svg {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
 }
 
 /* 主内容区 */
@@ -241,7 +321,7 @@ body {
     max-width: 768px;
     margin: 0 auto;
     text-align: center;
-    padding: 80px 24px;
+    padding: 220px 24px 80px;
 }
 
 .empty-icon {
@@ -499,6 +579,490 @@ body {
     background: var(--text-tertiary);
 }
 
+/* 加载动画样式 */
+.loading-text {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 16px;
+}
+
+.loading-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    animation: loading-bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.loading-dot:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+.loading-dot:nth-child(3) {
+    animation-delay: 0s;
+}
+
+@keyframes loading-bounce {
+    0%, 80%, 100% {
+        transform: scale(0);
+        opacity: 0.5;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* 设置菜单（小弹窗） */
+.settings-menu {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    min-width: 200px;
+    padding: 8px 0;
+    border-radius: 12px;
+    background: var(--bg-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--border-color);
+    animation: settingsMenuFadeIn 0.2s ease-out;
+    pointer-events: auto;
+}
+
+@keyframes settingsMenuFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.settings-menu-item {
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-radius: 6px;
+    margin: 0 4px;
+}
+
+.settings-menu-item:hover {
+    background: var(--hover-bg);
+    color: var(--primary);
+    transform: translateX(2px);
+}
+
+.settings-menu-item.danger {
+    color: #e54848;
+}
+
+.settings-menu-item.danger:hover {
+    background: rgba(229, 72, 72, 0.1);
+    color: #e54848;
+    transform: translateX(2px);
+}
+
+.settings-menu-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.settings-menu-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 8px;
+}
+
+/* 记忆体设置大窗 */
+.memory-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.memory-modal.show {
+    display: flex !important;
+    animation: memoryModalFadeIn 0.3s ease-out;
+}
+
+@keyframes memoryModalFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.memory-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.memory-content-wrapper {
+    position: relative;
+    width: 90%;
+    max-width: 800px;
+    max-height: 85vh;
+    background: var(--bg-primary);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 1001;
+    animation: memoryContentSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes memoryContentSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.memory-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.memory-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.memory-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.15s ease;
+}
+
+.memory-close:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+.memory-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.memory-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+.memory-description {
+    margin-bottom: 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(74, 158, 255, 0.05) 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.memory-description-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: white;
+}
+
+.memory-description-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.memory-description-text {
+    flex: 1;
+}
+
+.memory-description-text h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+}
+
+.memory-description-text p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+}
+
+.memory-editor-section {
+    margin-top: 20px;
+}
+
+.memory-actions-top {
+    margin-bottom: 16px;
+}
+
+.memory-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+
+.memory-label svg {
+    width: 18px;
+    height: 18px;
+    color: var(--primary);
+}
+
+/* 按钮样式 */
+.btn-secondary,
+.btn-danger-outline {
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-secondary:hover {
+    background: var(--hover-bg);
+    border-color: var(--primary);
+    color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(74, 158, 255, 0.15);
+}
+
+.btn-secondary:active {
+    transform: translateY(0);
+}
+
+.btn-secondary svg {
+    width: 16px;
+    height: 16px;
+}
+
+.btn-danger-outline {
+    border-color: #e54848;
+    color: #e54848;
+}
+
+.btn-danger-outline:hover {
+    background: #e54848;
+    color: white;
+}
+
+.btn-primary {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    background: var(--primary);
+    color: white;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(74, 158, 255, 0.25);
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.35);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-primary svg {
+    width: 16px;
+    height: 16px;
+}
+
+.btn-danger {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    background: #e54848;
+    color: white;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(229, 72, 72, 0.25);
+}
+
+.btn-danger:hover {
+    background: #d43f3f;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(229, 72, 72, 0.35);
+}
+
+.btn-danger:active {
+    transform: translateY(0);
+}
+
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-danger svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* 长期记忆编辑器 */
+.memory-editor {
+    margin-top: 16px;
+}
+
+.memory-textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    resize: vertical;
+    min-height: 120px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.memory-textarea:focus {
+    border-color: var(--primary);
+}
+
+.memory-textarea::placeholder {
+    color: var(--text-tertiary);
+}
+
+.memory-actions-bottom {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.memory-meta {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.memory-updated {
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.memory-updated svg {
+    width: 16px;
+    height: 16px;
+    color: var(--primary);
+    flex-shrink: 0;
+}
+
+.memory-empty {
+    font-size: 14px;
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.memory-empty svg {
+    width: 48px;
+    height: 48px;
+    color: var(--text-tertiary);
+    opacity: 0.5;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
     .sidebar {
@@ -512,4 +1076,61 @@ body {
     .empty-title {
         font-size: 20px;
     }
+    
+    .memory-content-wrapper {
+        width: 100%;
+        max-width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+    
+    .memory-body {
+        padding: 16px;
+    }
+}
+
+/* Toast 提示消息 */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    padding: 12px 24px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10000;
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 90%;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-success {
+    background: #10b981;
+    color: white;
+    border-color: #10b981;
+}
+
+.toast-error {
+    background: #e54848;
+    color: white;
+    border-color: #e54848;
+}
+
+.toast-info {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
 }

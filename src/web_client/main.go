@@ -23,6 +23,6 @@ func main() {
     config.Init() // 初始化配置
 	defer global.GRPCClient.Close() //后续关闭客户端
 	gin.SetMode(gin.ReleaseMode) // 设置gin的模式
-    router.Run() // 启动路由
+    router.Run("DEBUG") // 启动路由
 
 }

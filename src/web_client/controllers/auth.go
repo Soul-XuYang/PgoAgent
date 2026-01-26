@@ -34,7 +34,7 @@ type LoginDTO struct {
 }
 
 // 缓存信息
-type UserInfo struct {
+type LoginInfo struct {
 	ID       string
 	Password string
 	Username string
@@ -80,13 +80,13 @@ func Register(c *gin.Context) {
 		return
 	}
 	// 注册成功，先构建缓存
-	global.UserCache.Set(uname, &UserInfo{
+	global.UserCache.Set(uname, &LoginInfo{
 		ID:       u.ID,
 		Username: uname,
 		Password: hash,
 		Role:     u.Role, //数据库默认的缓存
 	})
-	token, err := utils.GenerateJWT(u.ID, u.Username, u.Role, config.EnvConfigHandler.WEBToken)
+	token, err := utils.GenerateJWT(u.ID, u.Username, u.Role, config.WEBTOKEN)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate token failed"})
 		return
@@ -125,10 +125,10 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	var user UserInfo
+	var user LoginInfo
 	userFromCache, exist := global.UserCache.Get(uname)
 	if exist {
-		if userFromCache, ok := userFromCache.(*UserInfo); ok {
+		if userFromCache, ok := userFromCache.(*LoginInfo); ok {
 			user = *userFromCache // 直接等于指针
 		} else {
 			//后端调试信息
@@ -142,8 +142,8 @@ func Login(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
-		// 将 models.Users 转换为 UserInfo
-		user = UserInfo{
+		// 将 models.Users 转换为 LoginInfo
+		user = LoginInfo{
 			ID:       dbUser.ID,
 			Username: dbUser.Username,
 			Password: dbUser.Password,
@@ -156,14 +156,14 @@ func Login(c *gin.Context) {
 	}
 	// 登录成功确保有效-更新缓存
 	if exist == false {
-		global.UserCache.Set(uname, &UserInfo{
+		global.UserCache.Set(uname, &LoginInfo{
 			ID:       user.ID,
 			Username: uname,
 			Password: user.Password,
 			Role:     user.Role, //数据库默认的缓存
 		})
 	}
-	token, err := utils.GenerateJWT(user.ID, user.Username, user.Role, config.EnvConfigHandler.WEBToken)
+	token, err := utils.GenerateJWT(user.ID, user.Username, user.Role, config.WEBTOKEN)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "generate token failed"})
 		return
@@ -192,52 +192,4 @@ type deleteInput struct {
 	Password string `json:"password"`
 }
 
-// @Summary      Delete user account
-// @Description  Delete the current user's account after password verification
-// @Tags         User
-// @Security     BearerAuth
-// @Accept       json
-// @Produce      json
-// @Param        data  body      deleteInput  true  "User credentials"
-// @Success      200   {object}  map[string]interface{}  "退出成功"
-// @Failure      400   {object}  map[string]interface{}  "请求参数错误"
-// @Failure      401   {object}  map[string]interface{}  "未认证"
-// @Failure      500   {object}  map[string]interface{}  "服务器错误"
-// @Router       /user/delete [delete]
-// 这个是在登录之后的注销页面
-func DeleteUser(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-	userIDStr, ok := userID.(string)
-	if !ok || userIDStr == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-	var deleteInput deleteInput //获得其请求的数据
-	if err := c.ShouldBindJSON(&deleteInput); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	var user models.Users //获得其用户模型信息
-	if err := global.DB.Where("id = ?", userIDStr).First(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
-		return
-	}
 
-	if !CheckPassword(user.Password, deleteInput.Password) || user.Username != deleteInput.Username {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
-		return
-	}
-	if err := global.DB.Delete(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
-		return
-	}
-	global.UserCache.Delete(user.Username) // 清理对应的用户
-	utils.ClearAuthCookie(c)
-	c.JSON(http.StatusOK, gin.H{
-		"ok": true,
-	})
-}
