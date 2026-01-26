@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"PgoAgent/config"
 	"PgoAgent/global"
 	"PgoAgent/log"
 	"PgoAgent/models"
 	"PgoAgent/services"
 	"encoding/json"
-
 	"fmt"
 
 	"github.com/gin-gonic/gin"
@@ -22,11 +22,18 @@ import (
 
 const (
 	PAGE_SIZE    = 10
-	TITLE_PROMT  = "请针对下述用户的问题，生成一个简洁明了的会话标题：\n用户输入："
+	TITLE_PROMT  = "请针对下述用户的问题，生成一个简洁明了的对话标题，[要求]:无需标注直接输出即可：	\n用户输入:"
+	FIRST_QUERY  = "回答上述用户的问题"
 	CHAT_TIMEOUT = 5 * time.Minute
 	USER_ROLE    = "user"
 	AI_ROLE      = "assistant"
 )
+
+type Message struct {
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 // ConversationCreateRequest 首次发送消息时的请求体
 type ConversationCreateRequest struct {
@@ -36,10 +43,12 @@ type ConversationCreateRequest struct {
 
 // ConversationCreateResponse 创建会话后的响应
 type ConversationCreateResponse struct {
-	ConversationID   string `json:"conversation_id"`
-	ConversationName string `json:"conversation_name"`
+	ConversationID   string    `json:"conversation_id"`
+	ConversationName string    `json:"conversation_name"`
+	Messages         []Message `json:"messages"`
 }
 
+// TODO： 前端这里还可以加一个对话标题的重命名
 // CreateConversations 创建会话并写入首条 user/assistant 消息 -创建以及包括第一个对话
 func CreateConversations(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -52,23 +61,37 @@ func CreateConversations(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
+	lastnow := time.Now()
 	// 首次创建会话时，前端可以不传 conversation_id，这里自动生成
 	if req.ConversationID == "" {
 		req.ConversationID = uuid.New().String()
 	}
-	// 构建基本的上下文管理
+
 	ctx, cancel := context.WithTimeout(context.Background(), CHAT_TIMEOUT)
-	defer cancel() // 确保在函数结束时释放资源
+	ctxWithToken, err := config.WithJWTToken(ctx, userID.(string)) // 添加GRPC的 JWT Token
+	if err != nil {
+		log.L().Error("failed to attach JWT token to gRPC context", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to attach JWT token"})
+		cancel()
+		return
+	}
+	defer cancel()
+
 	// 先调用后端大模型服务生成会话标题
-	conversationResponse, err := global.GRPCClient.Chat(
-		ctx,
+	conversationTitle, err := global.GRPCClient.Chat(
+		ctxWithToken,
 		TITLE_PROMT+req.UserQuery,
 		userID.(string),
 		req.ConversationID,
 	)
+	conversationContent, err := global.GRPCClient.Chat(
+		ctxWithToken,
+		FIRST_QUERY,
+		userID.(string),
+		req.ConversationID,
+	)
 	if err != nil {
-		log.L().Error("CreateConversations failed to generate conversation title", zap.Error(err))
+		log.L().Error("CreateConversations failed to generate conversation title, GRPC error:", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"GRPC error": err.Error()})
 		return
 	}
@@ -79,7 +102,7 @@ func CreateConversations(c *gin.Context) {
 		// 创建会话记录 -因为外键约束的操作，父表需要先创建- 后续加入到对应的事务队列里
 		conversation := &models.Conversations{
 			ID:               req.ConversationID,
-			ConversationName: conversationResponse.Reply,
+			ConversationName: conversationTitle.Reply,
 			UserID:           userID.(string),
 		}
 		if err := tx.Create(conversation).Error; err != nil {
@@ -100,7 +123,7 @@ func CreateConversations(c *gin.Context) {
 		assistantMsg := &models.Messages{
 			ConversationID: req.ConversationID,
 			Role:           AI_ROLE,
-			Content:        conversationResponse.Reply,
+			Content:        conversationContent.Reply,
 			CreatedAt:      now,
 		}
 		if err := tx.Create(assistantMsg).Error; err != nil {
@@ -125,31 +148,45 @@ func CreateConversations(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create conversation"})
 		return
 	}
-	fmt.Println("ok! ", conversationResponse.Reply)
+	fmt.Println("ok! ", conversationContent.Reply)
+	//初始化对应的内容
 	c.JSON(http.StatusCreated, &ConversationCreateResponse{
 		ConversationID:   req.ConversationID,
-		ConversationName: conversationResponse.Reply,
-	})
+		ConversationName: conversationTitle.Reply,
+		Messages: []Message{
+			{
+				Role:      USER_ROLE,
+				Content:   req.UserQuery,
+				CreatedAt: lastnow,
+			},
+			{
+				Role:      AI_ROLE,
+				Content:   conversationContent.Reply,
+				CreatedAt: now,
+			},
+		},
+	},
+	)
 }
 
-// 核心对话函数
-
+// 核心对话模块
 type SendMessageRequest struct {
 	Content  string `json:"content" binding:"required"`
 	Chatmode string `json:"chat_mode" binding:"required,oneof=stream invoke"`
 }
 
 type InvokeMessageResponse struct {
-	Response   string    `json:"response"` //完整的响应
-	CreatedAt  time.Time `json:"created_at"`
-	TokenUsage int32     `json:"token_usage"`
+	Message    Message `json:"message"` //完整的响应
+	TokenUsage int32   `json:"token_usage"`
 }
 
+// 流式的话单独发送不然难以处理，流式默认就是AI回复-易错
 type StreamMessageResponse struct {
 	Content    string    `json:"content,omitempty"`
 	Final      bool      `json:"final,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitempty"`
 	TokenUsage int32     `json:"token_usage,omitempty"`
+	NodeName   string    `json:"node_name,omitempty"` // 节点名称，用于前端判断是否是状态消息
 }
 
 // POST /api/v1/conversations/:id/messages //POST-这个是已有的对话ID下继续发消息
@@ -195,10 +232,18 @@ func HandleInvokeChat(c *gin.Context, userID string, conversationID string, inpu
 		Content:        input,
 		CreatedAt:      now,
 	}
-	// 调 gRPC 拿 AI 回复
-	ctx, cancel := context.WithTimeout(c.Request.Context(), CHAT_TIMEOUT)
+	// 调 gRPC 拿 AI 回复，并为请求绑定 JWT token
+	ctx, cancel := context.WithTimeout(context.Background(), CHAT_TIMEOUT)
+	ctxWithToken, err := config.WithJWTToken(ctx, userID) // 添加GRPC的 JWT Token
+	if err != nil {
+		log.L().Error("failed to attach JWT token to gRPC context", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to attach JWT token"})
+		cancel()
+		return
+	}
 	defer cancel()
-	response, err := global.GRPCClient.Chat(ctx, input, userID, conversationID)
+
+	response, err := global.GRPCClient.Chat(ctxWithToken, input, userID, conversationID)
 	if err != nil {
 		log.L().Error("SendMessage chat error", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "chat failed"})
@@ -233,10 +278,14 @@ func HandleInvokeChat(c *gin.Context, userID string, conversationID string, inpu
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "save message failed"})
 		return
 	}
-	// 非流式模式直接返回
+	// 非流式模式直接返回消息即可
 	c.JSON(http.StatusOK, &InvokeMessageResponse{
-		Response:   response.Reply,
-		CreatedAt:  lastTime,
+		Message: Message{
+			Role:      AI_ROLE,
+			Content:   response.Reply,
+			CreatedAt: lastTime,
+		},
+
 		TokenUsage: response.TokenUsage, // 看你的 gRPC 返回
 	})
 
@@ -276,15 +325,23 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 	w.Header().Set("X-Accel-Buffering", "no") // 禁用缓冲
 	c.Status(http.StatusOK)                   //提前设置
 
-	// 调用stream GRPC函数
-	ctx, cancel := context.WithTimeout(c.Request.Context(), CHAT_TIMEOUT)
+	// 调用 stream gRPC 函数，并为请求绑定 JWT token
+	ctx, cancel := context.WithTimeout(context.Background(), CHAT_TIMEOUT)
+	ctxWithToken, err := config.WithJWTToken(ctx, userID)
+	if err != nil {
+		log.L().Error("failed to attach JWT token to gRPC context", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to attach JWT token"})
+		cancel()
+		return
+	}
 	defer cancel()
 	var (
 		fullContent string
 		chunk       = &StreamMessageResponse{} //提前创建好空间，指针传入数据
 	)
-	err := global.GRPCClient.ChatStream(
-		ctx,
+	// 调用stream对话
+	err = global.GRPCClient.ChatStream(
+		ctxWithToken,
 		input,
 		userID,
 		conversationID,
@@ -296,8 +353,9 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 				//这里流式返回的是最后一个才给token
 				if !ch.FinalResponse {
 					chunk = &StreamMessageResponse{ //响应的数据片
-						Content: ch.Output,
-						Final:   false, // 这里只负责增量展示，最后的 final 另发一条
+						Content:  ch.Output,
+						Final:    false,       // 这里只负责增量展示，最后的 final 另发一条
+						NodeName: ch.NodeName, // 传递节点名称，用于前端判断是否是状态消息
 					}
 				} else {
 					//如果是最终回复
@@ -305,6 +363,7 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 						Content:    ch.Output,
 						TokenUsage: ch.Token, //这有最后一个才给token，因为这里是Langgraph节点传输
 						Final:      true,     // 这里只负责增量展示，最后的 final 另发一条
+						NodeName:   ch.NodeName,
 					}
 
 				}
@@ -347,4 +406,85 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 		return
 	}
 
+}
+
+// 对话消息响应list
+// ListMessagesResponse 获取会话消息列表的响应
+type ListMessagesResponse struct {
+	Messages []Message `json:"messages"`
+}
+
+// ListConversationMessages 获取指定会话下的所有消息（按时间升序）
+// GET /api/v1/conversations/:id/messages
+func ListConversationMessages(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	convID := c.Param("id")
+	if convID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation id is required"})
+		return
+	}
+
+	// 先校验会话是否存在且属于当前用户
+	var conv models.Conversations //对话表
+	if err := global.DB.Where("id = ? AND user_id = ?", convID, userID.(string)).First(&conv).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
+		} else {
+			log.L().Error(" ListConversationMessages function failed to find conversation", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load conversation"})
+		}
+		return
+	}
+
+	// 查询该会话下的所有消息-只查询需要的三个字段，默认升序顺序排序，从早到晚
+	var messages []Message
+	if err := global.DB.Model(&models.Messages{}).
+		Select("role", "content", "created_at").
+		Where("conversation_id = ?", convID).
+		Order("created_at ASC").
+		Find(&messages).Error; err != nil {
+		log.L().Error("ListConversationMessages query messages failed", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load messages"})
+		return
+	}
+
+	c.JSON(http.StatusOK, &ListMessagesResponse{
+		Messages: messages,
+	})
+}
+
+type Conversation struct {
+	ID               string     `json:"id"`
+	ConversationName string     `json:"conversation_name"`
+	LastMsgTime      *time.Time `json:"last_msg_time"`
+}
+type ListConversationsResponse struct {
+	Conversations []Conversation `json:"conversations"`
+}
+
+// ListConversations 列出当前用户的会话列表
+// GET /api/v1/conversations
+func ListConversations(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	// 这里查询用户的各个对话按照最后消息时间降序排序，没有消息的会话放在最后
+	var convs []Conversation
+	if err := global.DB.
+		Select("ID", "conversation_name", "last_msg_time").
+		Where("user_id = ?", userID.(string)).
+		Order("last_msg_time DESC, created_at DESC").
+		Find(&convs).Error; err != nil {
+		log.L().Error(" ListConversations function failed to query conversations", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load conversations"})
+		return
+	}
+	c.JSON(http.StatusOK, &ListConversationsResponse{Conversations: convs})
 }

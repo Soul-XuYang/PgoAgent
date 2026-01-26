@@ -11,7 +11,7 @@ import (
     "PgoAgent/models"
 )
 func initDB() { //注意这个是小写只能在当前包使用，大写才能被其他包使用
-    dsn := EnvConfigHandler.DSN
+    dsn := DSN
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) // 连接数据库 open ，gorm.Config是配置项
     if err != nil {
         log.L().Fatal("DataBase connection failed",

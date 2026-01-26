@@ -14,7 +14,7 @@ import (
 
 // 构建服务
 // Chat 非流式对话
-// 注意：ctx 应该已经通过 WithJWTToken 绑定了 JWT token
+// 注意：**ctx** 要已经通过 WithJWTToken 绑定了 JWT token
 func (c *Client) Chat(ctx context.Context, userInput string, userID, threadID string, opts ...ChatOption) (*ChatResponse, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("gRPC client is closed")

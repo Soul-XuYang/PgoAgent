@@ -56,7 +56,6 @@ func TestTokenBucket_ConcurrentAccess(t *testing.T) {
     var mu sync.Mutex
 
     fmt.Println("Initilized token:",tb.token)
-
     for i := 0; i < 1000; i++ {
         wg.Add(1)
         go func() {
@@ -74,7 +73,6 @@ func TestTokenBucket_ConcurrentAccess(t *testing.T) {
 
         }()
     }
-    
     wg.Wait()    
     fmt.Printf("Successfully got %d tokens in concurrent test\n", successCount)
     fmt.Printf("Remaining tokens after test are empty: %d\n", tb.token)

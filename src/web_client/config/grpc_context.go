@@ -1,8 +1,10 @@
 package config
-// 这里是对grpc的jwt进行封装，方便在其他地方使用
+
 import (
+
 	"context"
 	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/metadata"
 )
@@ -15,11 +17,15 @@ type JWTClaims struct {
 }
 
 // GenerateJWTToken 生成 JWT Token
+// 
+// - userID: 用户ID
+//
+// - GRPCTOKEN: GRPC 验证token
 func GenerateJWTToken(userID string) (string, error) {
 	// 从环境变量读取 JWT 密钥，如果加载失败则使用默认值
 	jwtToken := "MY_SECRET_KEY"
-	if EnvConfigHandler != nil && EnvConfigHandler.JWTToken != "" {
-		jwtToken = EnvConfigHandler.JWTToken
+	if GRPCTOKEN != "" {
+		jwtToken = GRPCTOKEN
 	}
 
 	// 创建 Claims
