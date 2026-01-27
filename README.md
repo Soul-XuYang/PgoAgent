@@ -1,5 +1,9 @@
 # PgoAgent
-This is a multi-agent processing system with long-term and short-term memory+mcp+local tools+rag. It uses the LLM locally deployed by ollma and PostgreSQL to store user's data, and the back-end uses grpc,gorm and gin to coordinate the output of the agent.
+本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于Langgraph + chromadb + Agentic Rag系统)。它采用**vllm**本地部署的大语言模型(**LLM**)与**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理输出。
+
+---
+
+This is an intelligent agent system named **PgoAgent**, featuring long-term and short-term memory, multi-agent collaboration capabilities, local tool integration, and retrieval-augmented generation functions (based on **Langgraph** + **chromadb ** + **Agentic Rag**). It employs a locally deployed large language model(**LLM**) using **vllm** and stores user data with **PostgreSQL**, while the backend coordinates agent outputs via **gRPC**, **GORM**, and **Gin** framework.
 
 # 技术栈
 **langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架。
