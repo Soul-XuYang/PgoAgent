@@ -1,5 +1,5 @@
 # PgoAgent
-本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于Langgraph + chromadb + Agentic Rag系统)。它采用**vllm**本地部署的大语言模型(**LLM**)与**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理输出。
+本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于**Langgraph + chromadb + Agentic Rag**系统)。它采用**vllm**本地部署的大语言模型(**LLM**)与**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理输出。
 
 ---
 
@@ -11,6 +11,10 @@ This is an intelligent agent system named **PgoAgent**, featuring long-term and 
 **RAG系统**: 本项目的RAG(Retrieval Augmented Generation)采用双阈值+混合检索(BM25:TF-IDF)+Rerank的方式进行检索，采用的数据库为本地的chromadb。
 
 **本地部署**: **langgraph**语言模型部署在本网的linux服务器上，使用vllm框架进行部署,同时也可以兼容市面上的openAI接口、嵌入模型和重排序模型api接口(自定义的类接口接受数据)等。
+
+**通信机制**: gRPC跨语言通信，双服务互不干扰。
+
+**Go的web客户端**：Gin的Web框架 + Gorm的ORM框架 + RestfulAPI
 
 # 本地部署
 - **本地大模型**：本次项目使用的是在服务器上使用VLLM部署的大模型(可自己配置使用)，配置的命令行CLI如下:
