@@ -4,7 +4,8 @@ package router
 import (
 	"PgoAgent/controllers"
 	"PgoAgent/middlewares"
-
+     swaggerFiles "github.com/swaggo/files"
+     ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +16,7 @@ func SetupRouter() *gin.Engine {
 	//记载对应的html
 	r.LoadHTMLGlob("static/*.html")
 	r.Static("/static", "static")
+    r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler)) //加载对应的swagger
 
 	// 根路径路由
 	r.GET("/", func(c *gin.Context) { c.HTML(200, "entry.html", nil) })

@@ -50,6 +50,18 @@ type ConversationCreateResponse struct {
 	Messages         []Message `json:"messages"`
 }
 
+// CreateConversations godoc
+// @Summary     创建会话并写入首条消息
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       data  body      ConversationCreateRequest  true  "创建会话参数"
+// @Success     201   {object}  ConversationCreateResponse
+// @Failure     400   {object}  map[string]string
+// @Failure     401   {object}  map[string]string
+// @Failure     500   {object}  map[string]string
+// @Router      /conversations [post]
 // CreateConversations 创建会话并写入首条 user/assistant 消息 -创建以及包括第一个对话
 func CreateConversations(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -196,6 +208,20 @@ type CancelResponse struct {
 	Message string `json:"message"`
 }
 
+// SendMessage godoc
+// @Summary     在已有会话下继续发送消息
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       id    path      string               true  "Conversation ID"
+// @Param       data  body      SendMessageRequest   true  "发送消息参数"
+// @Success     200   {object}  InvokeMessageResponse
+// @Failure     400   {object}  map[string]string
+// @Failure     401   {object}  map[string]string
+// @Failure     404   {object}  map[string]string
+// @Failure     500   {object}  map[string]string
+// @Router      /conversations/{id}/messages [post]
 // POST /api/v1/conversations/:id/messages //POST-这个是已有的对话ID下继续发消息
 func SendMessage(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -415,6 +441,17 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 
 }
 
+// CancelConversation godoc
+// @Summary     取消当前会话对应的大模型任务
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Produce     json
+// @Param       id  path      string          true  "Conversation ID"
+// @Success     200 {object}  CancelResponse
+// @Failure     400 {object}  map[string]string
+// @Failure     401 {object}  map[string]string
+// @Failure     500 {object}  map[string]string
+// @Router      /conversations/{id}/cancel [post]
 // CancelConversation 取消当前会话对应的大模型任务
 func CancelConversation(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -460,6 +497,21 @@ type ListMessagesResponse struct {
 	Messages []Message `json:"messages"`
 }
 
+// ListConversationMessages godoc
+// @Summary     获取指定会话下的消息列表
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Produce     json
+// @Param       id                path      string  true   "Conversation ID"
+// @Param       limit             query     int     false  "最大返回条数，默认20，最大100"
+// @Param       before_created_at query     string  false  "游标时间（RFC3339或RFC3339Nano）"
+// @Param       before_id         query     string  false  "游标消息ID"
+// @Success     200               {object}  ListMessagesResponse
+// @Failure     400               {object}  map[string]string
+// @Failure     401               {object}  map[string]string
+// @Failure     404               {object}  map[string]string
+// @Failure     500               {object}  map[string]string
+// @Router      /conversations/{id}/messages [get]
 // ListConversationMessages 获取指定会话下的所有消息（其结果按时间升序）
 func ListConversationMessages(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -554,6 +606,15 @@ type ListConversationsResponse struct {
 
 // ListConversations 列出当前用户的会话列表 -这个就是全部的对话记录列表
 // GET /api/v1/conversations
+// ListConversations godoc
+// @Summary     列出当前用户的会话列表
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Produce     json
+// @Success     200  {object}  ListConversationsResponse
+// @Failure     401  {object}  map[string]string
+// @Failure     500  {object}  map[string]string
+// @Router      /conversations [get]
 func ListConversations(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -574,14 +635,25 @@ func ListConversations(c *gin.Context) {
 	c.JSON(http.StatusOK, &ListConversationsResponse{Conversations: convs})
 }
 
-
-
 type ModifiedConversationRequest struct {
 	ConversationName string `json:"conversation_name"`
 	PinToTop         bool   `json:"pin_to_top"`
 }
 
 // CreateConversation 对话的改名
+// ModifiedConversation godoc
+// @Summary     修改会话信息（重命名/置顶）
+// @Tags        Conversations
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       id    path      string                      true  "Conversation ID"
+// @Param       data  body      ModifiedConversationRequest  true  "修改会话参数"
+// @Success     200   {object}  map[string]string
+// @Failure     400   {object}  map[string]string
+// @Failure     401   {object}  map[string]string
+// @Failure     500   {object}  map[string]string
+// @Router      /conversations/{id} [patch]
 func ModifiedConversation(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {

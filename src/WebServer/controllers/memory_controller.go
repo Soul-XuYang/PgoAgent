@@ -50,6 +50,16 @@ type StoreItem struct {
 	UpdatedAt time.Time      `json:"updated_at" gorm:"column:updated_at"`
 }
 
+// GetUserLongTermMemory godoc
+// @Summary     获取当前用户的长期记忆
+// @Tags        Memory
+// @Security    BearerAuth
+// @Produce     json
+// @Success     200  {object}  StoreItem
+// @Failure     401  {object}  map[string]string
+// @Failure     404  {object}  map[string]string
+// @Failure     500  {object}  map[string]string
+// @Router      /profile/store [get]
 // GetUserLongTermMemory 获取当前用户的长期记忆
 func GetUserLongTermMemory(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -89,6 +99,18 @@ type SetUserLongTermMemoryRequest struct {
 	Value datatypes.JSON `json:"value"` // 这里是用户长期记忆，需要前端以 json 包装
 }
 
+// SetUserLongTermMemory godoc
+// @Summary     设置或更新当前用户的长期记忆
+// @Tags        Memory
+// @Security    BearerAuth
+// @Accept      json
+// @Produce     json
+// @Param       data  body      SetUserLongTermMemoryRequest  true  "长期记忆内容(JSON)"
+// @Success     200   {object}  map[string]string
+// @Failure     400   {object}  map[string]string
+// @Failure     401   {object}  map[string]string
+// @Failure     500   {object}  map[string]string
+// @Router      /profile/store [post]
 // SetUserLongTermMemory 更新当前用户的长期记忆（仅更新 value / updated_at）
 func SetUserLongTermMemory(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -124,6 +146,15 @@ func SetUserLongTermMemory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User's long term memory updated successfully"})
 }
 
+// DeleteUserLongTermMemory godoc
+// @Summary     删除当前用户的长期记忆
+// @Tags        Memory
+// @Security    BearerAuth
+// @Produce     json
+// @Success     200  {object}  map[string]string
+// @Failure     401  {object}  map[string]string
+// @Failure     500  {object}  map[string]string
+// @Router      /profile/store [delete]
 // DeleteUserLongTermMemory 删除当前用户的长期记忆
 func DeleteUserLongTermMemory(c *gin.Context) {
 	userID, exists := c.Get("user_id")

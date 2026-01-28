@@ -49,7 +49,7 @@ func initDefaultUser() error {
 
 // Run 启动Web服务器
 // - mode: DEBUG or RELEASE
-func Run(mode string) {
+func Run(mode string) { //RUN
 	initOnce.Do(func() {
 		if mode == "DEBUG" {
 			initDefaultUser()
@@ -58,6 +58,7 @@ func Run(mode string) {
 		fmt.Println("4. Router has initilized")
 		webServerAddr := fmt.Sprintf("%s:%d", config.ConfigHandler.WEBSERVER.Config.Host, config.ConfigHandler.WEBSERVER.Config.Port)
 		fmt.Printf("5. PgoAgent Web server is running at http://%s\n", webServerAddr)
+		fmt.Printf("6. Swagger is running at http://%s/swagger/index.html\n", webServerAddr)
 		r.Run(webServerAddr) // listen and serve on
 	})
-}
+} 
