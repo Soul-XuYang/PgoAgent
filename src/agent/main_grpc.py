@@ -9,11 +9,11 @@ import warnings
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 # 添加项目路径
 from agent.agent_grpc import agent_pb2, agent_pb2_grpc
-from agent.main_cli import AgentRunner, UserConfig # 相关的封装agent模块和用户数据
+from agent.main_cli import AgentRunner, UserConfig, SimpleCancelListener  # 相关的封装agent模块和用户数据
 from agent.graph import create_graph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import AsyncPostgresStore
-from agent.config import logger, animated_banner
+from agent.config import logger, animated_banner, setup_logger
 from typing import Any
 from agent.main_cli import test_db_connection
 from langchain_core.messages import HumanMessage
@@ -83,7 +83,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
         self.start_time = datetime.now()
 
 
-
+    # request请求
     async def Chat(self, request,context): # 这个方法严格遵循proto文件中定义的接口
         """非流式对话"""
         try:
@@ -104,9 +104,8 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 "recursion_limit": request.user_config.recursion_limit or 50
             }
 
-            # 上述转换请求
-            from agent.main_cli import CancelListener
-            cancel_listener = CancelListener()
+            # 上述转换请求 - gRPC 场景下使用不带 stdin 监听的简单取消器
+            cancel_listener = SimpleCancelListener()
             thread_key = f"{request.user_config.user_id}_{request.user_config.thread_id}"
             async with self._table_lock:
                 if thread_key in self.cancel_listeners_table:
@@ -115,10 +114,7 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 self.cancel_listeners_table[thread_key] = cancel_listener
 
             try:
-                logger.info(f"GRPC | Chat 开始处理，调用 agent_runner.chat()")
-                logger.info(f"GRPC | Chat 参数: user_input='{request.user_input[:50]}...', user_config={user_config}")
                 agent_runner = AgentRunner(self.shared_graph)
-                logger.info(f"GRPC | Chat AgentRunner 创建成功，开始调用 chat()")
                 start_time = time.time()
                 reply, token_usage = await agent_runner.chat(
                     request.user_input,
@@ -126,14 +122,15 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                     cancel_listener
                 )
                 elapsed_time = time.time() - start_time
-                logger.info(f"GRPC | Chat 处理完成，耗时 {elapsed_time:.2f}秒，reply_length={len(reply)}, token_usage={token_usage}")
-                logger.info(f"GRPC | Chat 准备返回响应")
+                logger.debug(f"GRPC | Chat 处理完成，耗时 {elapsed_time:.2f}秒，reply_length={len(reply)}, token_usage={token_usage}")
+
+                # 生成对应的响应
                 response = agent_pb2.ChatResponse(
                     reply=reply,
                     token_usage=token_usage,
                     success=True
                 )
-                logger.info(f"GRPC | Chat 响应对象创建成功，准备返回")
+                logger.debug(f"GRPC | Chat 响应对象创建成功，准备返回")
                 return response
             finally:
                 async with self._table_lock:
@@ -163,8 +160,8 @@ class AgentServiceImpl(agent_pb2_grpc.AgentServiceServicer): # gRPC 框架要求
                 "recursion_limit": request.user_config.recursion_limit or 50
             }
 
-            from agent.main_cli import CancelListener
-            cancel_listener = CancelListener()
+            # gRPC 流式场景下同样使用简单取消器，由 CancelTask RPC 设置标志位
+            cancel_listener = SimpleCancelListener()
             thread_key = f"{request.user_config.user_id}_{request.user_config.thread_id}"
             async with self._table_lock:
                 if thread_key in self.cancel_listeners_table:
@@ -310,7 +307,6 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
                 "recursion_limit": 50
             }
             shared_graph = await create_graph(store, default_config, checkpointer=checkpointer)
-            logger.info("graph任务图当前已创建") # 之所以可以共享创建任务图是因为对应的函数可以传入用户参数从而保持不同的状态
 
             # 创建对应的服务端的限流器对象-参数设置
             enable_jwt =SERVER_CONFIG.enable_jwt
@@ -327,7 +323,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
                     skip_methods=skip_methods,
                 )
                 interceptors.append(ip_rate_interceptor)
-                logger.info("gRPC: 全体限流拦截器已启用")
+                logger.debug("gRPC: 全体限流拦截器已启用")
             if enable_jwt:
                 secret_key = os.getenv("GRPC_TOKEN", "MY_SECRET_KEY")
                 jwt_interceptor = JWTInterceptor(
@@ -336,7 +332,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
                     skip_methods=skip_methods  # GetServerInfo 不需要认证
                 )
                 interceptors.append(jwt_interceptor)
-                logger.info("gRPC: JWT 拦截器已启用")
+                logger.debug("gRPC: JWT 拦截器已启用")
 
             # 3. 用户限流拦截器（基于用户ID）
             if enable_user_rate_limit:
@@ -345,12 +341,12 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
                     user_burst=SERVER_CONFIG.user_burst,              # 突发120个请求
                     user_id_metadata_key="user_id",
                     skip_methods=skip_methods,
-                    shards=64,                   # 64个分片减少锁竞争
-                    bucket_ttl_sec=30 * 60,     # 30分钟未访问清理
+                    shards=64,                   
+                    bucket_ttl_sec=30 * 60,     
                     cleanup_interval_sec=60
                 )
                 interceptors.append(user_rate_interceptor)
-                logger.info("gRPC: 用户限流拦截器已启用")
+                logger.debug("gRPC: 用户限流拦截器已启用")
 
             server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=max_threading),
                 interceptors=interceptors, # 按顺序执行拦截器
@@ -385,6 +381,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
 
 if __name__ == "__main__":
     animated_banner()
+    setup_logger()
     if sys.platform.startswith("win"): # 如果是windows系统
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:

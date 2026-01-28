@@ -1,16 +1,20 @@
 package router
+
 import (
-	"fmt"
 	"PgoAgent/config"
 	"PgoAgent/global"
 	"PgoAgent/models"
 	"PgoAgent/utils"
-
+	"fmt"
+	"sync"
 )
+
 const (
 	defaultUserName     = "admin"
 	defaultUserPassword = "123456"
-)	
+)
+
+var initOnce sync.Once
 
 func initDefaultUser() error {
 	// 使用Count代替First，避免record not found日志
@@ -24,7 +28,7 @@ func initDefaultUser() error {
 		return nil
 	}
 
-	hash, err := utils.HashPassword(defaultUserPassword) 	// 这个易错，易遗忘
+	hash, err := utils.HashPassword(defaultUserPassword) // 这个易错，易遗忘
 	if err != nil {
 		return fmt.Errorf("failed to hash default user password: %v", err)
 	}
@@ -42,16 +46,18 @@ func initDefaultUser() error {
 
 	return nil
 }
-// Run 启动Web服务器 
-// - mode: DEBUG or RELEASE
-func Run(mode string){
-	if mode == "DEBUG" {
-		initDefaultUser()
-	} 
-	r:= SetupRouter()
-	fmt.Println("4. Router has initilized")
-	webServerAddr :=  fmt.Sprintf("%s:%d", config.ConfigHandler.WEBSERVER.Config.Host, config.ConfigHandler.WEBSERVER.Config.Port)
-	fmt.Printf("5. PgoAgent Web server is running at http://%s\n", webServerAddr)
-	r.Run(webServerAddr) // listen and serve on
-}
 
+// Run 启动Web服务器
+// - mode: DEBUG or RELEASE
+func Run(mode string) {
+	initOnce.Do(func() {
+		if mode == "DEBUG" {
+			initDefaultUser()
+		}
+		r := SetupRouter()
+		fmt.Println("4. Router has initilized")
+		webServerAddr := fmt.Sprintf("%s:%d", config.ConfigHandler.WEBSERVER.Config.Host, config.ConfigHandler.WEBSERVER.Config.Port)
+		fmt.Printf("5. PgoAgent Web server is running at http://%s\n", webServerAddr)
+		r.Run(webServerAddr) // listen and serve on
+	})
+}

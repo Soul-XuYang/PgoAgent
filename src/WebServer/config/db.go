@@ -4,7 +4,6 @@ import (
     "fmt"
     "time"
     "go.uber.org/zap"
-    "PgoAgent/log"
     "gorm.io/gorm"
     "PgoAgent/global"
     "gorm.io/driver/postgres"
@@ -14,14 +13,15 @@ func initDB() { //注意这个是小写只能在当前包使用，大写才能�
     dsn := DSN
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{}) // 连接数据库 open ，gorm.Config是配置项
     if err != nil {
-        log.L().Fatal("DataBase connection failed",
+        fmt.Println("DataBase connection failed",
             zap.Error(err),
             zap.String("dsn", dsn),
         )
+        panic(err)
     }
     sqlDB, err := db.DB()
     if err != nil {
-        log.L().Error("DataBase connection failed ,got error:", zap.Error(err))
+        fmt.Println("DataBase connection failed ,got error:", zap.Error(err))
     }
     sqlDB.SetMaxIdleConns(ConfigHandler.WEBSERVER.Config.MaxIdleConns) // 设置最大空闲连接数
     sqlDB.SetMaxOpenConns(ConfigHandler.WEBSERVER.Config.MaxOpenConns)
@@ -37,7 +37,8 @@ func dbMigrate(){ //将go的结构体的类型迁移到数据库
         &models.Conversations{},
         &models.Messages{},
         );err != nil {
-        log.L().Error("DataBase migration failed ,got error:", zap.Error(err))
+        fmt.Println("DataBase migration failed ,got error:", zap.Error(err))
+        panic(err)
     }
     fmt.Println("2. DataBase migration success!")
 }

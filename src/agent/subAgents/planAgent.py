@@ -32,12 +32,15 @@ class PlanStep(BaseModel):
         "none",
         "search",
         "rag_retrieve",
-        "file_read",
-        "file_write",
+        "read_file",
+        "write_file",
+        "create_file",
+        "delete_file",
         "list_dir",
         "get_time",
+        "calculate",
         "code_exec",
-        "web_search",
+        "validator",
         "external_mcp",
     ] = Field(
         "none",
@@ -65,10 +68,13 @@ PLANNER_PROMPT = """
   - description：该步骤要做什么（自然语言）
   - capability：能力类型，选择其一：
     • none：纯思考/文本生成-无需工具
-    • list_dir:列出文件及遍历文件目录
+    • list_dir：列出文件及遍历文件目录
     • search：本地文件搜索
     • rag_retrieve：知识库检索执行（LLM会根据问题自动选择合适的检索策略和参数，失败时可调用rag_rewrite_query重写query后重试）
-    • read_file/write_file/create_file/delete_file：文件操作，其中文件中追加内容算入write_file
+    • read_file：读取文件内容（包括read_file、read_json、search_in_file）
+    • write_file：写入或修改文件（包括write_file、write_json、append_file，追加内容也算write_file）
+    • create_file：创建新文件
+    • delete_file：删除文件
     • get_time：时间查询（获取当前时间、日期等实时信息）
     • calculate：计算操作
     • code_exec：shell代码执行,以及相关代码的执行

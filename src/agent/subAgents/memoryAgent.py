@@ -12,7 +12,7 @@ from .state_utils import get_latest_HumanMessage, has_obvious_profile_info
 from agent.my_llm import llm
 from agent.utils import extract_token_usage
 
-key = "profile"  # 你可以改名，比如 "user_memory"
+
 # 用户的画像 - 这个类就获得了数据验证、类型转换和序列化等强大功能。
 class MemoryState(BaseModel):
     memory: str = Field(description="使用中文项目符号列表整理的用户画像信息，只包含用户明确表述的客观事实")
@@ -43,7 +43,7 @@ CREATE_MEMORY_PROMPT = """你正在为单个用户整理一份长期用户画像
 请直接输出更新后的用户画像信息，使用项目符号列表格式："""
 
 STORE_NAMESPACE_ROOT = "user_memory"
-
+key = "profile"  # 你可以改名，比如 "user_memory"
 class MemoryAgentState(TypedDict):
     """
     记忆智能体的 State：
@@ -92,6 +92,8 @@ async def get_user_memory(store: AsyncPostgresStore,user_id: str,default_text: s
         memory = value.get("memory", "") # 一般这种命名空间都是存到value里的
     except Exception as e:
         print(f"获取用户{user_id}数据失败: {e}")
+        import traceback
+        traceback.print_exc()  # 打印完整堆栈
         raise
     return memory or default_text
 

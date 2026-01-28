@@ -13,6 +13,7 @@ import (
 	"PgoAgent/services"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	PAGE_SIZE    = 10
+	PAGE_SIZE    = 20
 	TITLE_PROMT  = "请针对下述用户的问题，生成一个简洁明了的对话标题，[要求]:无需标注直接输出即可：	\n用户输入:"
 	FIRST_QUERY  = "回答上述用户的问题"
 	CHAT_TIMEOUT = 5 * time.Minute
@@ -30,6 +31,7 @@ const (
 )
 
 type Message struct {
+	ID        string    `json:"id"`
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
@@ -187,6 +189,12 @@ type StreamMessageResponse struct {
 	CreatedAt  time.Time `json:"created_at,omitempty"`
 	TokenUsage int32     `json:"token_usage,omitempty"`
 	NodeName   string    `json:"node_name,omitempty"` // 节点名称，用于前端判断是否是状态消息
+}
+
+// CancelResponse 取消对话任务的响应
+type CancelResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
 }
 
 // POST /api/v1/conversations/:id/messages //POST-这个是已有的对话ID下继续发消息
@@ -408,14 +416,52 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 
 }
 
+// CancelConversation 取消当前会话对应的大模型任务
+func CancelConversation(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	convID := c.Param("id")
+	if convID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation id is required"})
+		return
+	}
+	// 为 gRPC CancelTask 构造带超时和 JWT 的上下文
+	ctx, cancel := context.WithTimeout(c.Request.Context(), CHAT_TIMEOUT)
+	ctxWithToken, err := config.WithJWTToken(ctx, userID.(string)) // 上下文绑定对应的
+	if err != nil {
+		log.L().Error("failed to attach JWT token to gRPC context for cancel", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to attach JWT token"})
+		cancel()
+		return
+	}
+	defer cancel()
+
+	if err := global.GRPCClient.CancelTask(ctxWithToken, userID.(string), convID); err != nil {
+		log.L().Error("CancelConversation failed to cancel task", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, &CancelResponse{
+			Success: false,
+			Message: "cancel task failed: " + err.Error(),
+		})
+		return
+	}
+    log.L().Debug("CancelConversation function successful to cancel task")
+	c.JSON(http.StatusOK, &CancelResponse{
+		Success: true,
+		Message: "cancel requested",
+	})
+}
+
 // 对话消息响应list
 // ListMessagesResponse 获取会话消息列表的响应
 type ListMessagesResponse struct {
 	Messages []Message `json:"messages"`
 }
 
-// ListConversationMessages 获取指定会话下的所有消息（按时间升序）
-// GET /api/v1/conversations/:id/messages
+// ListConversationMessages 获取指定会话下的所有消息（其结果按时间升序）
 func ListConversationMessages(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -441,18 +487,58 @@ func ListConversationMessages(c *gin.Context) {
 		return
 	}
 
-	// 查询该会话下的所有消息-只查询需要的三个字段，默认升序顺序排序，从早到晚
-	var messages []Message
-	if err := global.DB.Model(&models.Messages{}).
-		Select("role", "content", "created_at").
-		Where("conversation_id = ?", convID).
-		Order("created_at ASC").
-		Find(&messages).Error; err != nil {
-		log.L().Error("ListConversationMessages query messages failed", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load messages"})
+	limit := PAGE_SIZE
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil { //ASCII to Integer
+			if n <= 0 {
+				n = 1
+			} else if n > 100 {
+				n = 100
+			}
+			limit = n
+		} else {
+			log.L().Error("ListConversationMessages function failed to parse limit", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse limit"})
+			return
+		}
+	}
+	// 搭建查询条件
+	q := global.DB.Model(&models.Messages{}).
+		Select("id", "role", "content", "created_at").
+		Where("conversation_id = ?", convID)
+	// 获取查询时间条件
+	beforeCreatedAtStr := c.Query("before_created_at")
+	beforeID := c.Query("before_id")
+	if beforeCreatedAtStr != "" && beforeID != "" {
+		beforeCreatedAt, err := time.Parse(time.RFC3339Nano, beforeCreatedAtStr)
+		if err != nil {
+			// 兼容 RFC3339
+			beforeCreatedAt, err = time.Parse(time.RFC3339, beforeCreatedAtStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid before_created_at"})
+				return
+			}
+		}
+		q = q.Where(
+			"(created_at < ?) OR (created_at = ? AND id < ?)",
+			beforeCreatedAt, beforeCreatedAt, beforeID,
+		) //加入上述的时间限制条件
+	} else if (beforeCreatedAtStr != "" && beforeID == "") || (beforeCreatedAtStr == "" && beforeID != "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "before_created_at and before_id must be provided together"})
 		return
 	}
 
+	// 查询该会话下的所有消息-只查询需要的三个字段，默认升序顺序排序，从早到晚
+	var messages []Message
+	if err := q.Order("created_at DESC").Order("id DESC").Limit(limit).Find(&messages).Error; err != nil {
+		log.L().Error(" ListConversationMessages function failed to query messages", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load messages"})
+		return
+	}
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i] //双向交换
+	}
+	// 这里MessageID是自增的
 	c.JSON(http.StatusOK, &ListMessagesResponse{
 		Messages: messages,
 	})
