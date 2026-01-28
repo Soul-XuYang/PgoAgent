@@ -5,21 +5,20 @@
 
 This is an intelligent agent system named **PgoAgent**, featuring long-term and short-term memory, multi-agent collaboration capabilities, local tool integration, and retrieval-augmented generation functions (based on **Langgraph** + **chromadb ** + **Agentic Rag**). It employs a locally deployed large language model(**LLM**) using **vllm** and stores user data with **PostgreSQL**, while the backend coordinates agent outputs via **gRPC**, **GORM**, and **Gin** framework.
 
-# 技术栈
-**langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架。
+## 技术栈 - Technology Stack
+**langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架，Agentic RAG(Agentic Retrieval Augmented Generation)作为RAG系统，采用**chromadb**作为向量数据库连接框架。
 
 **RAG系统**: 本项目的RAG(Retrieval Augmented Generation)采用双阈值+混合检索(BM25:TF-IDF)+Rerank的方式进行检索，采用的数据库为本地的chromadb。
 
-**本地部署**: **langgraph**语言模型部署在本网的linux服务器上，使用vllm框架进行部署,同时也可以兼容市面上的openAI接口、嵌入模型和重排序模型api接口(自定义的类接口接受数据)等。
+**本地部署**: **langgraph**语言模型部署在本网的linux服务器上，使用**vllm**框架进行部署,同时也可以兼容市面上的对话模型、嵌入模型和重排序模型等OPENAI风格的api接口等。
 
-**通信机制**: gRPC跨语言通信，双服务互不干扰。
+**通信机制**: **gRPC**跨语言通信，双服务互不干扰。
 
-**Go的web客户端**：Gin的Web框架 + Gorm的ORM框架 + RestfulAPI
-
-# 本地部署
+**Go的web客户端**：**Gin**的Web框架 + **Gorm**的ORM框架：基本实现了用户的注册登录使用如对话更新、消息列表的刷新打印、消息历史记录等功能。还可支持用户自定义记忆体画像的使用。
+## 本地部署 - Local Deployment
 - **本地大模型**：本次项目使用的是在服务器上使用VLLM部署的大模型(可自己配置使用)，配置的命令行CLI如下:
 - **用户数据库** 使用docker镜像下载PostgresSQL并用其容器进行链接
-# 微调
+## 微调 - Fine Tuning
 可见本文项目的的workflow图
 
 其中关于plan、decide和memory子图的用户画像的刻画这三个部分是针对特定的应用场景，可依据实际需求进行部分微调

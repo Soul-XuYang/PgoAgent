@@ -50,7 +50,6 @@ type ConversationCreateResponse struct {
 	Messages         []Message `json:"messages"`
 }
 
-// TODO： 前端这里还可以加一个对话标题的重命名
 // CreateConversations 创建会话并写入首条 user/assistant 消息 -创建以及包括第一个对话
 func CreateConversations(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -448,7 +447,7 @@ func CancelConversation(c *gin.Context) {
 		})
 		return
 	}
-    log.L().Debug("CancelConversation function successful to cancel task")
+	log.L().Debug("CancelConversation function successful to cancel task")
 	c.JSON(http.StatusOK, &CancelResponse{
 		Success: true,
 		Message: "cancel requested",
@@ -553,7 +552,7 @@ type ListConversationsResponse struct {
 	Conversations []Conversation `json:"conversations"`
 }
 
-// ListConversations 列出当前用户的会话列表
+// ListConversations 列出当前用户的会话列表 -这个就是全部的对话记录列表
 // GET /api/v1/conversations
 func ListConversations(c *gin.Context) {
 	userID, exists := c.Get("user_id")
@@ -566,11 +565,64 @@ func ListConversations(c *gin.Context) {
 	if err := global.DB.
 		Select("ID", "conversation_name", "last_msg_time").
 		Where("user_id = ?", userID.(string)).
-		Order("last_msg_time DESC, created_at DESC").
+		Order("last_msg_time DESC, updated_at DESC").
 		Find(&convs).Error; err != nil {
 		log.L().Error(" ListConversations function failed to query conversations", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load conversations"})
 		return
 	}
 	c.JSON(http.StatusOK, &ListConversationsResponse{Conversations: convs})
+}
+
+
+
+type ModifiedConversationRequest struct {
+	ConversationName string `json:"conversation_name"`
+	PinToTop         bool   `json:"pin_to_top"`
+}
+
+// CreateConversation 对话的改名
+func ModifiedConversation(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	convID := c.Param("id")
+	if convID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation id is vaild, please check"})
+		return
+	}
+	var req ModifiedConversationRequest
+	if c.ShouldBindJSON(&req) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body is vaild, please check"})
+		return
+	}
+	now := time.Now() // 获取当前时间
+	err := global.DB.Transaction(func(tx *gorm.DB) error {
+		if req.ConversationName != "" {
+			if err := tx.Model(&models.Conversations{}).Where("id = ? and user_id = ?", convID, userID.(string)).Update("conversation_name", req.ConversationName).Error; err != nil {
+				return err
+			}
+
+		}
+		if req.PinToTop {
+			// 仅手动更新 last_msg_time，UpdatedAt 交给 GORM 自动维护
+			if err := tx.Model(&models.Conversations{}).
+				Where("id = ? and user_id = ?", convID, userID.(string)).
+				Update("last_msg_time", now).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		log.L().Error("ModifiedConversation function failed to update", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to update conversation: " + err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "conversation name updated successfully"})
 }

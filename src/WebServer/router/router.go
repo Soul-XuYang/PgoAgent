@@ -43,6 +43,8 @@ func SetupRouter() *gin.Engine {
 	{
 		// 列出当前用户的对话列表
 		conversations.GET("", controllers.ListConversations)
+		// 修改会话（重命名 / 置顶）
+		conversations.PATCH("/:id", controllers.ModifiedConversation)
 		// 创建会话并写入首条消息
 		conversations.POST("", controllers.CreateConversations)
 		// 获取指定会话下的消息列表
