@@ -9,7 +9,7 @@ description = "LangChain Agent"
 authors = [{ name = "yongzhiyin", email = "610415432@qq.com" }]
 license = { text = "MIT" }
 readme = "README.md"
-requires-python = ">=3.12,<4.0.0"  # 修改这一行
+requires-python = ">=3.12,<4.0.0"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,20 +21,41 @@ dependencies = [
     "langgraph>=1.0.0",
     "langchain>=1.1.0",
     "langchain-core>=1.0.0",
+    "langchain-community>=0.4.1",
+    "langchain-openai>=1.1.3",
+    "langchain-mcp-adapters>=0.2.1",
     "python-dotenv>=1.0.1",
-    "langgraph-checkpoint-postgres>=3.0.0",     # 新增PostgreSQL
-    "unstructured (>=0.18.21,<0.19.0)",
-    "markdown (>=3.10,<4.0)",
-    "pillow>=12.0.0",
-    "pandas>=2.3.3",
+    "langgraph-checkpoint-postgres>=3.0.0",  # PostgreSQL checkpoint & store
+    "chromadb>=1.3.7",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "loguru>=0.7.3",
+    "rich>=13.0.0",
     "jq>=1.10.0",
     "docx>=0.2.4",
     "python-docx>=1.2.0",
-    "chromadb>=1.3.7",
-    "langchain-openai>=1.1.3",
-    "langchain-community>=0.4.1",
+    "unstructured>=0.18.21,<0.19.0",
+    "markdown>=3.10,<4.0",
+    "pillow>=12.0.0",
+    "pandas>=2.3.3",
+    "jieba>=0.42.1",
+    "tiktoken>=0.12.0",
+    "nltk>=3.9.0",
+    "mcp>=1.24.0",
+    "httpx>=0.27.0",
+    "httpx-sse>=0.4.3",
+    "uvicorn>=0.38.0",
+    "sse-starlette>=3.0.4",
+    "starlette>=0.50.0",
+    "grpcio>=1.76.0",
+    "grpcio-tools>=1.76.0",
+    "psycopg[binary]>=3.3.0",
     "loguru>=0.7.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Soul-XuYang/PgoAgent"
 
 [project.optional-dependencies]
 dev = [
@@ -46,10 +67,13 @@ dev = [
 
 # ---- 关键：标准 src-layout 打包配置 ----
 [tool.setuptools]
-package-dir = { "" = "src" } # 路径寻找
+package-dir = { "" = "src" }  # 项目源码在 src 目录
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agent*", "chat_models*", "utils*"] # 对应的包名
+include = [
+    "agent*",    # 主 Agent 逻辑（src/agent）
+    "PgoModel*", # 模型封装（src/PgoModel）
+]
 
 # ----------------------------------------

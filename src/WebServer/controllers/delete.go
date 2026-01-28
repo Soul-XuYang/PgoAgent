@@ -15,6 +15,19 @@ import (
 
 // DELETE /api/v1/conversations/:id
 // 删除会话：同时删除 messages + langgraph checkpoint 相关记录
+
+// @Summary      删除对话
+// @Description  在认证后删除对应的对话的数据
+// @Tags         User
+// @Security     BearerAuth
+// @Accept       json
+// @Produce      json
+// @Param        data  body      deleteInput  true  "User credentials"
+// @Success      200   {object}  map[string]interface{}  "退出成功"
+// @Failure      400   {object}  map[string]interface{}  "请求参数错误"
+// @Failure      401   {object}  map[string]interface{}  "未认证"
+// @Failure      500   {object}  map[string]interface{}  "服务器错误"
+// @Router       /auth/delete/conversation/:id [delete]
 func DeleteConversation(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -94,8 +107,9 @@ func DeleteConversation(c *gin.Context) {
 
 // 删除用户也是一个非常 carefully 的操作：这里可见python中的存储节点的操作
 // 本质是一个命名空间+key-value哈希表的操作，故而我们需要删除命名空间即可删除用户数据
-// @Summary      Delete user account
-// @Description  Delete the current user's account after password verification
+
+// @Summary      删除用户
+// @Description  在认证后删除对应的用户的数据
 // @Tags         User
 // @Security     BearerAuth
 // @Accept       json
@@ -105,7 +119,7 @@ func DeleteConversation(c *gin.Context) {
 // @Failure      400   {object}  map[string]interface{}  "请求参数错误"
 // @Failure      401   {object}  map[string]interface{}  "未认证"
 // @Failure      500   {object}  map[string]interface{}  "服务器错误"
-// @Router       /user/delete [delete]
+// @Router       /auth/delete [delete]
 // 这个是在登录之后的注销页面
 func DeleteUser(c *gin.Context) {
 	userID, exists := c.Get("user_id")

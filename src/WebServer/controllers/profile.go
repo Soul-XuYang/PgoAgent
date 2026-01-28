@@ -16,6 +16,14 @@ type UserInfo struct {
 
 var weekdays = []string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
 
+// GetInfo godoc
+// @Summary     获取当前登录用户的基础信息
+// @Tags        Profile
+// @Security    BearerAuth
+// @Produce     json
+// @Success     200  {object}  UserInfo
+// @Failure     401  {object}  map[string]string
+// @Router      /profile [get]
 // GetInfo GET请求 - 返回当前用户的基础信息（供前端展示用户名、日期等）
 func GetInfo(c *gin.Context) {
 	// 从上下文获取用户ID
