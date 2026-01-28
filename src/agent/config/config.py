@@ -2,7 +2,6 @@ import tomllib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple, Any
 from dotenv import load_dotenv
 
 
@@ -56,7 +55,10 @@ class Server:
     send_size:int
     receive_size:int
     # 注意：TLS 现在默认启用，不再需要配置开关
-
+@dataclass
+class LogLever:
+    agent_lever:str
+    web_lever:str
 
 def load_model_use() -> ModelUseConfig:
     """
@@ -149,7 +151,7 @@ def load_rerank_model() -> RerankModelConfig:
     except KeyError as e:
         raise ValueError(f"配置文件缺少必要的字段: {e}")
 
-def get_dsn(env:str ='dev')->tuple[str,str]:
+def get_dsn()->tuple[str,str]:
     """
     优先从.env文件读取DATABASE_URL，如果不存在则从config.toml读取配置
     这样更安全，避免敏感信息泄露到配置文件
@@ -205,6 +207,7 @@ def get_server_config() -> Server:
         raise FileNotFoundError("配置文件未找到")
     except KeyError as e:
         raise ValueError(f"配置文件缺少必要的字段: {e}")
+
 
 # 全局函数变量
 DATABASE_DSN,VERSION=get_dsn()

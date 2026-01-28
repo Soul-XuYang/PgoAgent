@@ -5,6 +5,11 @@ const API_BASE = '/api/v1';
 let currentConversationId = null;
 let conversations = [];
 
+// 消息分页相关常量 & 状态（上滑加载更多）
+const MESSAGES_PAGE_SIZE = 20; // 和后端 PAGE_SIZE 保持一致
+// 每个会话的分页状态：{ hasMore, isLoading, oldestMessage }
+const messagesPagination = {};
+
 // DOM 元素（延迟获取，确保DOM已加载）
 let conversationList, messagesList, messagesContainer, emptyState;
 let messageInput, sendBtn, newChatBtn, attachBtn, userNameEl;
@@ -12,6 +17,10 @@ let settingsBtn, settingsMenu, memorySettingsBtn, logoutMenuBtn;
 let memoryModal, memoryOverlay, memoryClose;
 let loadMemoryBtn, saveMemoryBtn, deleteMemoryBtn;
 let memoryTextarea, memoryEditor, memoryMeta;
+// 流式对话状态 & 发送按钮图标
+let isStreaming = false;
+let currentStreamAbortController = null;
+let sendBtnDefaultIconHTML = '';
 
 // 获取DOM元素的函数
 function getDOMElements() {
@@ -37,6 +46,11 @@ function getDOMElements() {
     memoryTextarea = document.getElementById('memoryTextarea');
     memoryEditor = document.getElementById('memoryEditor');
     memoryMeta = document.getElementById('memoryMeta');
+
+    // 记录发送按钮的默认图标 HTML，后续切换为“停止”图标时可还原
+    if (sendBtn) {
+        sendBtnDefaultIconHTML = sendBtn.innerHTML;
+    }
 }
 
 // 初始化
@@ -51,11 +65,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 设置事件监听
 function setupEventListeners() {
-    sendBtn.addEventListener('click', handleSendMessage);
+    // 发送按钮：空闲时发送消息，流式生成时为“停止”按钮
+    sendBtn.addEventListener('click', handleSendOrCancel);
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            handleSendMessage();
+            handleSendOrCancel();
         }
     });
     
@@ -98,6 +113,11 @@ function setupEventListeners() {
         }
     });
     
+    // 聊天消息区域滚动加载（上滑加载更多消息）
+    if (messagesContainer) {
+        messagesContainer.addEventListener('scroll', handleMessagesScroll);
+    }
+
     // 长期记忆相关事件
     if (loadMemoryBtn) {
         loadMemoryBtn.addEventListener('click', loadUserMemory);
@@ -364,17 +384,24 @@ function groupConversationsByDate(convs) {
     return groups;
 }
 
-// 加载对话消息
+// 加载对话消息（支持分页，首次加载最新一页）
 async function loadConversation(conversationId) {
     try {
         currentConversationId = conversationId;
-        
+
+        // 初始化当前会话的分页状态
+        messagesPagination[currentConversationId] = {
+            hasMore: true,
+            isLoading: false,
+            oldestMessage: null,
+        };
+
         // 更新对话列表的激活状态
         conversationList.querySelectorAll('.conversation-item').forEach(item => {
             item.classList.toggle('active', item.dataset.conversationId === conversationId);
         });
 
-        const response = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, {
+        const response = await fetch(`${API_BASE}/conversations/${conversationId}/messages?limit=${MESSAGES_PAGE_SIZE}`, {
             method: 'GET',
             credentials: 'include',
             headers: {
@@ -386,7 +413,18 @@ async function loadConversation(conversationId) {
             const data = await response.json();
             // 适配新的消息格式：支持 messages 和 Messages 字段
             const messages = data.messages || data.Messages || [];
-            renderMessages(messages);
+
+            // 记录当前会话最早一条消息，用于后续 before_* 查询
+            if (messages.length > 0) {
+                const oldest = messages[0];
+                messagesPagination[currentConversationId].oldestMessage = oldest;
+                messagesPagination[currentConversationId].hasMore = messages.length === MESSAGES_PAGE_SIZE;
+            } else {
+                messagesPagination[currentConversationId].hasMore = false;
+            }
+
+            // 首次加载渲染整页
+            renderInitialMessages(messages);
             emptyState.style.display = 'none';
             messagesList.style.display = 'block';
             scrollToBottom();
@@ -396,8 +434,83 @@ async function loadConversation(conversationId) {
     }
 }
 
-// 渲染消息（适配新的 Message 格式：role, content, created_at）
-function renderMessages(messages) {
+// 处理消息列表滚动（上滑加载更多历史记录）
+function handleMessagesScroll() {
+    if (!messagesContainer || !currentConversationId) return;
+
+    const pagination = messagesPagination[currentConversationId];
+    if (!pagination || pagination.isLoading || !pagination.hasMore) return;
+
+    // 当滚动接近顶部时加载更多历史消息
+    const threshold = 40; // 距顶部 40px 内触发
+    if (messagesContainer.scrollTop <= threshold) {
+        loadMoreMessages(currentConversationId);
+    }
+}
+
+// 加载更多历史消息（基于 before_created_at + before_id 分页）
+async function loadMoreMessages(conversationId) {
+    const pagination = messagesPagination[conversationId];
+    if (!pagination || pagination.isLoading || !pagination.hasMore || !pagination.oldestMessage) return;
+
+    const oldest = pagination.oldestMessage;
+    const oldestCreatedAt = getMessageCreatedAt(oldest);
+    const oldestId = oldest.id;
+
+    if (!oldestCreatedAt || !oldestId) {
+        pagination.hasMore = false;
+        return;
+    }
+
+    pagination.isLoading = true;
+
+    try {
+        const params = new URLSearchParams({
+            limit: String(MESSAGES_PAGE_SIZE),
+            before_created_at: oldestCreatedAt,
+            before_id: oldestId,
+        });
+
+        const response = await fetch(
+            `${API_BASE}/conversations/${conversationId}/messages?${params.toString()}`,
+            {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (!response.ok) {
+            pagination.isLoading = false;
+            return;
+        }
+
+        const data = await response.json();
+        const messages = data.messages || data.Messages || [];
+
+        if (messages.length === 0) {
+            pagination.hasMore = false;
+            pagination.isLoading = false;
+            return;
+        }
+
+        // 更新最早一条消息 & 是否还有更多
+        pagination.oldestMessage = messages[0];
+        pagination.hasMore = messages.length === MESSAGES_PAGE_SIZE;
+
+        // 向顶部插入更早消息，保持当前视口位置
+        prependMessages(messages);
+    } catch (error) {
+        console.error('Failed to load more messages:', error);
+    } finally {
+        pagination.isLoading = false;
+    }
+}
+
+// 渲染消息（首次加载一页，适配新的 Message 格式：role, content, created_at）
+function renderInitialMessages(messages) {
     if (!messages || messages.length === 0) {
         messagesList.innerHTML = '';
         return;
@@ -405,31 +518,58 @@ function renderMessages(messages) {
 
     let html = '';
     messages.forEach(msg => {
-        // 适配新的消息格式：role, content, created_at
-        const role = msg.role || '';
-        const content = msg.content || '';
-        const createdAt = msg.created_at || msg.CreatedAt || '';
-        
-        const isUser = role === 'user';
-        const time = createdAt ? formatTime(createdAt) : '刚刚';
-        
-        html += `
-            <div class="message ${isUser ? 'message-user' : ''}">
-                <div class="message-avatar">
-                    ${isUser 
-                        ? '<svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2"/></svg>'
-                        : '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                    }
-                </div>
-                <div class="message-content">
-                    <div class="message-text">${escapeHtml(content)}</div>
-                    <div class="message-time">${time}</div>
-                </div>
-            </div>
-        `;
+        html += buildMessageHtml(msg);
     });
 
     messagesList.innerHTML = html;
+}
+
+// 兼容旧代码中的 renderMessages 调用，内部复用 renderInitialMessages
+// TODO: 如后续有更复杂的渲染需求，可在此扩展
+function renderMessages(messages) {
+    renderInitialMessages(messages);
+}
+
+// 向顶部追加更早的消息（用于上滑加载历史）
+function prependMessages(messages) {
+    if (!messages || messages.length === 0) return;
+
+    let html = '';
+    messages.forEach(msg => {
+        html += buildMessageHtml(msg);
+    });
+
+    // 记录加载前的滚动高度，加载后保持视口位置不跳动
+    const previousScrollHeight = messagesContainer.scrollHeight;
+    messagesList.insertAdjacentHTML('afterbegin', html);
+    const newScrollHeight = messagesContainer.scrollHeight;
+    messagesContainer.scrollTop = newScrollHeight - previousScrollHeight + messagesContainer.scrollTop;
+}
+
+// 构造单条消息的 HTML，适配新的消息结构
+function buildMessageHtml(msg) {
+    // 适配新的消息格式：role, content, created_at
+    const role = msg.role || '';
+    const content = msg.content || '';
+    const createdAt = getMessageCreatedAt(msg);
+
+    const isUser = role === 'user';
+    const time = createdAt ? formatTime(createdAt) : '刚刚';
+
+    return `
+        <div class="message ${isUser ? 'message-user' : ''}">
+            <div class="message-avatar">
+                ${isUser 
+                    ? '<svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2"/></svg>'
+                    : '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                }
+            </div>
+            <div class="message-content">
+                <div class="message-text">${formatMessageContent(content)}</div>
+                <div class="message-time">${time}</div>
+            </div>
+        </div>
+    `;
 }
 
 // 发送消息
@@ -514,6 +654,15 @@ async function handleSendMessage() {
         showLoadingMessage();
 
         try {
+            // 流式模式下，使用 AbortController 以支持前端中断
+            let controller = null;
+            if (chatMode === 'stream') {
+                controller = new AbortController();
+                currentStreamAbortController = controller;
+                isStreaming = true;
+                updateSendButtonState();
+            }
+
             const response = await fetch(`${API_BASE}/conversations/${currentConversationId}/messages`, {
                 method: 'POST',
                 credentials: 'include',
@@ -524,6 +673,7 @@ async function handleSendMessage() {
                     content: content,
                     chat_mode: chatMode
                 }),
+                signal: controller ? controller.signal : undefined,
             });
 
             if (response.ok) {
@@ -532,7 +682,13 @@ async function handleSendMessage() {
                 
                 if (chatMode === 'stream') {
                     // 流式响应处理
-                    await handleStreamResponse(response);
+                    try {
+                        await handleStreamResponse(response);
+                    } finally {
+                        isStreaming = false;
+                        currentStreamAbortController = null;
+                        updateSendButtonState();
+                    }
                 } else {
                     // 非流式响应处理
                     const data = await response.json();
@@ -553,11 +709,49 @@ async function handleSendMessage() {
                 alert(error.error || '发送失败');
             }
         } catch (error) {
-            // 移除加载动画
-            hideLoadingMessage();
-            console.error('Failed to send message:', error);
-            alert('发送失败，请稍后重试');
+            // 如果是手动中断（AbortError），静默处理即可
+            if (error.name === 'AbortError') {
+                console.debug('Stream request aborted by user');
+            } else {
+                hideLoadingMessage();
+                console.error('Failed to send message:', error);
+                alert('发送失败，请稍后重试');
+            }
         }
+    }
+}
+
+// 发送按钮统一入口：未在流式中则发送，流式中则执行“停止生成”
+async function handleSendOrCancel() {
+    if (isStreaming) {
+        await cancelCurrentStream();
+    } else {
+        await handleSendMessage();
+    }
+}
+
+// 前端取消当前流式响应，并通知后端中断 gRPC 任务
+async function cancelCurrentStream() {
+    // 先本地中止 SSE 读取
+    if (currentStreamAbortController) {
+        currentStreamAbortController.abort();
+        currentStreamAbortController = null;
+    }
+    isStreaming = false;
+    updateSendButtonState();
+
+    if (!currentConversationId) return;
+
+    try {
+        await fetch(`${API_BASE}/conversations/${currentConversationId}/cancel`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+    } catch (error) {
+        console.error('Failed to cancel conversation task:', error);
     }
 }
 
@@ -697,6 +891,23 @@ function formatDate(dateString) {
 // 滚动到底部
 function scrollToBottom() {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// 根据当前流式状态更新发送按钮的图标与样式
+function updateSendButtonState() {
+    if (!sendBtn) return;
+    if (isStreaming) {
+        sendBtn.classList.add('is-streaming');
+        sendBtn.title = '停止生成';
+        // 使用一个简单的黑色方块作为“停止”图标
+        sendBtn.innerHTML = '<span class="stop-icon"></span>';
+    } else {
+        sendBtn.classList.remove('is-streaming');
+        sendBtn.title = '发送';
+        if (sendBtnDefaultIconHTML) {
+            sendBtn.innerHTML = sendBtnDefaultIconHTML;
+        }
+    }
 }
 
 // 新建对话
@@ -1125,6 +1336,28 @@ function formatTime(isoString) {
     if (days < 7) return `${days}天前`;
     
     return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
+// 统一获取消息的 created_at 字段（兼容不同命名）
+function getMessageCreatedAt(msg) {
+    if (!msg) return '';
+    return msg.created_at || msg.CreatedAt || msg.createdAt || '';
+}
+
+// 对 AI / 用户回复做简单格式化：换行 + 加粗（支持 **粗体**）
+function formatMessageContent(text) {
+    if (!text) return '';
+
+    // 先做 HTML 转义，防止 XSS
+    const escaped = escapeHtml(text);
+
+    // 处理换行：\n -> <br>
+    let html = escaped.replace(/\r\n|\r|\n/g, '<br>');
+
+    // 处理简单粗体：**xxx** -> <strong>xxx</strong>
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    return html;
 }
 
 function escapeHtml(text) {

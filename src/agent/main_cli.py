@@ -1,10 +1,12 @@
 import asyncio
 import sys
+
+from langchain_community.vectorstores.oraclevs import log_level
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage
 from langgraph.store.postgres import AsyncPostgresStore
-from agent.config import DATABASE_DSN
+from agent.config import DATABASE_DSN, setup_logger
 from graph import create_graph
 from agent.config import logger
 from typing import TypedDict
@@ -29,14 +31,16 @@ class StreamOutput(TypedDict):
     """流式输出"""
     output: str
     final_response: bool
-    node_name:str
+    node_name: str
     token: int
+
 
 class AgentState(TypedDict):
     """流式输出"""
     CumulativeUsage: int
     summary: str
     latest_conversation: list
+
 
 def node_output(node: str) -> str:
     node_dict = {
@@ -53,50 +57,38 @@ class CancelListener:
     """后台监听用户取消输入的类 - 使用独立线程监听"""
 
     def __init__(self):
-        self.should_cancel = False # 标志位
+        self.should_cancel = False  # 标志位
         self.input_queue = queue.Queue()
         self.listener_thread = None
         self.stop_flag = threading.Event()
 
     def _input_listener(self):
-        """独立线程监听输入-跨平台使用"""
+        """独立线程监听输入-跨平台使用（统一用阻塞读取整行的方式）"""
+        import sys
         while not self.stop_flag.is_set():
             try:
-                # 使用非阻塞方式检查是否该停止
-                if self.stop_flag.wait(0.1):
+                # 直接阻塞读取一行输入（适配 VSCode 终端 / PowerShell 等）
+                line = sys.stdin.readline()
+                if not line:
+                    # EOF，直接退出监听
                     break
-                # 检查是否有输入（带超时）
-                import sys
-                import select
-                if sys.platform == "win32":
-                    # Windows 上使用 msvcrt
-                    import msvcrt
-                    if msvcrt.kbhit():
-                        line = input()
-                        if line.strip().lower() in {"cancel", "c", "取消"}:
-                            self.should_cancel = True
-                            break
-                else:
-                    # Unix/Linux 使用 select
-                    if select.select([sys.stdin], [], [], 0.1)[0]:
-                        line = sys.stdin.readline().strip()
-                        if line.lower() in {"cancel", "c", "取消"}:
-                            self.should_cancel = True
-                            break
+                text = line.strip().lower()
+                if text in {"cancel", "c", "取消"}:
+                    self.should_cancel = True
+                    break
             except KeyboardInterrupt:
                 # 处理 用户的Ctrl+C 中断
                 self.should_cancel = True
                 break
             except Exception as e:
-                logger. warning(f"中断错误：{e}")
-
-
+                logger.warning(f"中断错误：{e}")
 
     def start(self):
         """启动监听线程"""
         self.should_cancel = False
         self.stop_flag.clear()
-        self.listener_thread = threading.Thread(target=self._input_listener, daemon=True)
+        self.listener_thread = threading.Thread(
+            target=self._input_listener, daemon=True)
         self.listener_thread.start()
 
     def stop(self):
@@ -115,36 +107,58 @@ class CancelListener:
         self.should_cancel = False
 
 
+class SimpleCancelListener:
+    """
+    一个不带输入监听线程的简单取消监听器。
+    适用于 gRPC 等场景：只通过代码设置 should_cancel 标志位，
+    不会去读取 stdin，避免阻塞或与 CLI 行为耦合。
+    """
+
+    def __init__(self):
+        self.should_cancel = False
+
+    def start(self):
+        """与 CLI 版接口保持一致，但不做任何事"""
+        return
+
+    def stop(self):
+        """与 CLI 版接口保持一致，但不做任何事"""
+        return
+
+    def is_cancelled(self):
+        """检查是否被取消"""
+        return self.should_cancel
+
+    def reset(self):
+        """重置取消状态"""
+        self.should_cancel = False
+
+
 class AgentRunner:
     """简单封装一层，复用 _chat_impl 的思路"""
 
     def __init__(self, graph):
-        self._graph = graph  # 构建所需的graph
+        self._graph = graph  # 构建所需的graph-公共图使用
 
     async def chat(self, user_input: str, user_config: UserConfig, cancel_listener: CancelListener = None) -> (
-    str, int):
-        logger.info(f"AgentRunner.chat() 开始: user_input长度={len(user_input)}, user_config={user_config}")
+            str, int):
         if not user_config:
             raise ValueError("请提供用户配置信息")
         chat_state = {
             "messages": [HumanMessage(content=user_input)],
             "context": {},
         }
-        logger.info(f"AgentRunner.chat() chat_state 创建完成")
-
         # 如果有对应的监听器，启动监听
         if cancel_listener:
             cancel_listener.start()
-            logger.info(f"AgentRunner.chat() cancel_listener 已启动")
-
         try:
-            logger.info(f"AgentRunner.chat() 准备调用 graph.ainvoke()")
             # 创建主任务
-            main_task = asyncio.create_task(self._graph.ainvoke(chat_state, config=user_config))
-            logger.info(f"AgentRunner.chat() graph.ainvoke() 任务已创建，开始等待完成")
+            main_task = asyncio.create_task(
+                self._graph.ainvoke(chat_state, config=user_config))
+            logger.debug(f"AgentRunner.chat() graph.ainvoke() 任务已创建，开始等待完成")
             # 轮询检查取消状态
             poll_count = 0
-            while not main_task.done():
+            while not main_task.done(): # 不断循环
                 if cancel_listener and cancel_listener.is_cancelled():
                     logger.warning(f"AgentRunner.chat() 检测到取消信号")
                     main_task.cancel()
@@ -156,14 +170,14 @@ class AgentRunner:
                 await asyncio.sleep(0.1)  # 避免busy-wait
                 poll_count += 1
                 if poll_count % 50 == 0:  # 每5秒打印一次
-                    logger.info(f"AgentRunner.chat() 等待中... 已等待 {poll_count * 0.1:.1f} 秒")
+                    logger.debug(
+                        f"AgentRunner.chat() 等待中... 已等待 {poll_count * 0.1:.1f} 秒")
 
-            logger.info(f"AgentRunner.chat() graph.ainvoke() 任务完成，开始处理结果")
             result = main_task.result()
-            logger.info(f"AgentRunner.chat() 结果获取成功，messages数量={len(result.get('messages', []))}")
             final_msg = result["messages"][-1]
             final_token = result.get("usages", {}).get("total", 0)
-            logger.info(f"AgentRunner.chat() 准备返回: reply_length={len(final_msg.content)}, token={final_token}")
+            logger.debug(
+                f"AgentRunner.chat() 准备返回: reply_length={len(final_msg.content)}, token={final_token}")
             return final_msg.content, final_token
 
         except Exception as e:
@@ -172,7 +186,7 @@ class AgentRunner:
         finally:
             if cancel_listener:
                 cancel_listener.stop()
-                logger.info(f"AgentRunner.chat() cancel_listener 已停止")
+                logger.debug(f"AgentRunner.chat() cancel_listener 已停止")
 
     async def chat_stream(self, user_input: str, user_config: UserConfig, cancel_listener: CancelListener = None):
         """流式返回响应内容"""
@@ -192,7 +206,8 @@ class AgentRunner:
             cancel_listener.start()
 
         try:
-            stream_generator = self._graph.astream(chat_state, config=user_config)
+            stream_generator = self._graph.astream(
+                chat_state, config=user_config)
 
             async for chunk in stream_generator:
                 # 检查是否被取消
@@ -228,13 +243,15 @@ class AgentRunner:
                         )
         finally:
             if cancel_listener:
+                logger.debug(f"AgentRunner.stream() cancel_listener 已停止")
                 cancel_listener.stop()
 
     async def get_conversation_history(self, user_config: UserConfig) -> dict:
         """依据用户ID获取当前会话的对话历史和状态信息"""
         try:
             # 从 checkpoint 获取当前状态
-            state_snapshot = await self._graph.aget_state(user_config)  # 这个是graph里的一个函数方法
+            # 这个是graph里的一个函数方法
+            state_snapshot = await self._graph.aget_state(user_config)
             if not state_snapshot or not state_snapshot.values:
                 return AgentState(
                     latest_conversation=[],
@@ -248,23 +265,25 @@ class AgentRunner:
             usages = state.get("usages", {})
 
             return AgentState(
-                    latest_conversation=conversation_pairs,
-                    CumulativeUsage=usages.get("total", 0),
-                    summary=context.get("summary", ""),
-                )
+                latest_conversation=conversation_pairs,
+                CumulativeUsage=usages.get("total", 0),
+                summary=context.get("summary", ""),
+            )
         except Exception as e:
             logger.error(f"获取对话历史失败: {e}")
             return AgentState(
-                    latest_conversation=[],
-                    CumulativeUsage=0,
-                    summary="",
-                )
+                latest_conversation=[],
+                CumulativeUsage=0,
+                summary="",
+            )
+
 
 async def test_db_connection(dsn: str, timeout: int = 10) -> bool:
     """直接测试数据库连接，快速失败"""
     try:
         logger.info(f"正在测试数据库连接...")
-        conn = await asyncio.wait_for(AsyncConnection.connect(dsn), timeout=timeout) # 给一个异步协程设置超时时间
+        # 给一个异步协程设置超时时间
+        conn = await asyncio.wait_for(AsyncConnection.connect(dsn), timeout=timeout)
         await conn.close()
         await conn.close()
         logger.info("当前数据库连接成功!")
@@ -276,6 +295,7 @@ async def test_db_connection(dsn: str, timeout: int = 10) -> bool:
         logger.error(f"❌ 数据库连接失败: {e}")
         logger.error(f"   请检查 PostgreSQL 服务是否运行，以及 DATABASE_DSN 配置是否正确")
         return False
+
 
 async def main(user_config: UserConfig):
     # 先测试数据库连接
@@ -293,7 +313,7 @@ async def main(user_config: UserConfig):
             await checkpointer.setup()
             logger.info("PostgresSaver checkpoint 初始化成功!")
 
-             # 这里是一个测试的用户配置输入
+            # 这里是一个测试的用户配置输入
             graph = await create_graph(store, user_config, checkpointer=checkpointer)
             agent = AgentRunner(graph)
             logger.info("Graph 构建完成，进入终端对话模式...(输入 exit/quit 退出)")
@@ -302,7 +322,7 @@ async def main(user_config: UserConfig):
             print("2. 输入 'stream' 切换流式输出，'normal' 切换普通输出")
             print("3. 在 Agent 执行过程中，可输入 'cancel'/'c'/'取消' 来中断")
             print("=" * 60)
-            init_state= await agent.get_conversation_history(user_config)
+            init_state = await agent.get_conversation_history(user_config)
             total_token = init_state.get("CumulativeUsage", 0)
             mode = user_config["configurable"].get("chat_mode", "normal")
             while True:
@@ -336,14 +356,17 @@ async def main(user_config: UserConfig):
                                 print("\nPgoAgent> ", reply)
                                 current_token = chunk.get("token", 0)
                             else:
-                                print("\r" + chunk.get("output", ""), end="", flush=True)
-                        print(f"|系统信息| token用量:{current_token}, 耗时:{time.time() - start_time:.2f}s")
+                                print("\r" + chunk.get("output", ""),
+                                      end="", flush=True)
+                        print(
+                            f"|系统信息| token用量:{current_token}, 耗时:{time.time() - start_time:.2f}s")
                     else:
                         reply, current_token = await agent.chat(user_input, user_config, cancel_listener)
                         usage_delta = current_token-total_token
                         total_token = current_token
                         print("PgoAgent> ", reply)
-                        print(f"|系统信息| token用量:{usage_delta}, 耗时:{time.time() - start_time:.2f}s")
+                        print(
+                            f"|系统信息| token用量:{usage_delta}, 耗时:{time.time() - start_time:.2f}s")
 
                 except asyncio.CancelledError:
                     print("\n⚠️ 任务已被取消")
@@ -357,12 +380,13 @@ async def main(user_config: UserConfig):
     print("当前Pgo CLI程序已结束")
 
 
-
-
 if __name__ == "__main__":
     animated_banner()
+    setup_logger(log_level="debug",enable_warn_error=False,enable_all_log=False)
     if sys.platform.startswith("win"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略-专门对于win系统的
+        asyncio.set_event_loop_policy(
+            asyncio.WindowsSelectorEventLoopPolicy())  # 设置事件循环策略-专门对于win系统的
     # 测试用户的数据 - 对应的对话ID和用户ID
-    asyncio.run(main(user_config = {"configurable": {"thread_id": "002", "user_id": "user_003", "chat_mode": "stream"},"recursion_limit": 50  }))
+    asyncio.run(main(user_config={"configurable": {
+                "thread_id": "001", "user_id": "user_001", "chat_mode": "stream"}, "recursion_limit": 50}))
     # 你好，我叫jack，请问你叫什么呢?

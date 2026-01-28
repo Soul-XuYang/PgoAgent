@@ -8,6 +8,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/joho/godotenv"
+	"sync"
 )
 
 const (
@@ -26,6 +27,7 @@ var (
     GRPCTOKEN string 
 	WEBTOKEN string
 	DSN string
+	initOnce sync.Once
 )
 // 配置文件-嵌套形式
 type Config struct {

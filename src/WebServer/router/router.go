@@ -49,6 +49,8 @@ func SetupRouter() *gin.Engine {
 		conversations.GET("/:id/messages", controllers.ListConversationMessages)
 		// 继续在已有会话下发消息
 		conversations.POST("/:id/messages", controllers.SendMessage)
+		// 取消当前会话对应的大模型任务
+		conversations.POST("/:id/cancel", controllers.CancelConversation)
 		// 删除指定会话
 		conversations.DELETE("/:id", controllers.DeleteConversation)
 	}

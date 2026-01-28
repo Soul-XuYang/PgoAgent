@@ -2,7 +2,6 @@ package config
 
 import (
 	"PgoAgent/global"
-	"PgoAgent/log"
 	"PgoAgent/services"
 	"fmt"
 
@@ -17,11 +16,10 @@ const (
 	TB = 1024 * 1024 * 1024 * 1024
 )
 
-
 func initGRPCClient() {
 	client, err := services.NewClient(ConfigHandler.GRPC.Server.Host, ConfigHandler.GRPC.Server.Port, ConfigHandler.GRPC.Server.SendSize*MB, ConfigHandler.GRPC.Server.ReceiveSize*MB)
 	if err != nil {
-		log.L().Fatal("Failed to create gRPC client, got error:", zap.Error(err))
+		fmt.Println("Failed to create gRPC client, got error:", zap.Error(err))
 		panic(err)
 	}
 	global.GRPCClient = client
@@ -29,16 +27,18 @@ func initGRPCClient() {
 }
 
 func Init() {
+	initOnce.Do(func(){
 	SimpleBanner()
 	if LoadErr != nil {
-		log.L().Fatal("Failed to load config.toml, got error:", zap.Error(LoadErr))
+		fmt.Println("Failed to load config.toml, got error:", zap.Error(LoadErr))
 		panic(LoadErr)
 	}
 	if LoadEnvErr != nil {
-		log.L().Fatal("Failed to load .env, got error:", zap.Error(LoadEnvErr))
+		fmt.Println("Failed to load .env, got error:", zap.Error(LoadEnvErr))
 		panic(LoadEnvErr)
 	}
 	initDB()
 	dbMigrate()
 	initGRPCClient()
+	})
 }

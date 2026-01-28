@@ -124,7 +124,7 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 	var user models.Users //获得其用户模型信息
-	if err := global.DB.Where("id = ?", userIDStr).First(&user).Error; err != nil {
+	if err := global.DB.Model(&models.Users{}).Where("id = ?", userIDStr).First(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
 		return
 	}

@@ -6,6 +6,7 @@ from typing import Annotated, List, TypedDict, NotRequired, Literal
 from langchain_core.messages import ToolMessage, BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.tools import BaseTool
+from langchain_core.runnables import RunnableConfig
 from langgraph.constants import END, START
 from langgraph.graph import add_messages, StateGraph
 from langgraph.store.postgres import AsyncPostgresStore
@@ -122,7 +123,6 @@ async def summarization_node(
             cleaned_messages.append(msg)  # 拼接
             continue
 
-        # 2) ✅把 ToolMessage 转成普通文本消息，保留语义信息用于总结
         if isinstance(msg, ToolMessage):
             tool_name = getattr(msg, "name", "") or "unknown_tool"
             tool_content = (getattr(msg, "content", "") or "").strip()
@@ -132,7 +132,7 @@ async def summarization_node(
             cleaned_messages.append(new_msg)
             continue
 
-        # 3) ✅把带 tool_calls 的 AIMessage “降级”为普通 AIMessage（清空 tool_calls）
+
         if isinstance(msg, AIMessage) and (getattr(msg, "tool_calls", None) or []):
             new_msg = AIMessage(content=getattr(msg, "content", "") or "")
             new_msg.id = getattr(msg, "id", None) or str(uuid.uuid4())
@@ -195,7 +195,7 @@ def tool_result_judgement(tool_msg: ToolMessage) -> bool:
         logger.error(f"JSON解析错误: {str(e)}")
         return False
     except Exception as e:
-        logger.info(f"处理数据时发生错误: {str(e)}")
+        logger.error(f"处理数据时发生错误: {str(e)}")
         return False
 
     return False
@@ -617,10 +617,6 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         # 选用工具
         response: BaseMessage = await llm_run.ainvoke(msgs_for_llm) # 存有的是工具调用信息
         usage_delta = extract_token_usage(response)
-        if PRINT_SWITCH:
-            logger.info(system_content)
-            logger.info(f"当前工具的执行结果{response.content}")
-            logger.info(f"[agent_node-执行] 步骤: {current_step}, 工具: {current_capability}, Token: {usage_delta}")
         tool_calls = getattr(response, "tool_calls", None) or []
         if (not allow_use_tool) and tool_calls:
             # 关键：清空 response 本身的 tool_calls，避免 agent_choice 再次 use_tools
@@ -646,14 +642,24 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         }
 
     # 对话聊天节点
-    async def chat_node(state: State) -> State:
+    async def chat_node(state: State, config: RunnableConfig) -> State:
+        # 方便排查 gRPC / CLI 在图中的执行情况
         msgs = state.get("messages", [])
         ctx = state.setdefault("context", {})
         summary = ctx.get("summary")
         user_profile = ctx.get("user_profile", {})
         if not user_profile:
-            configurable = getattr(config, "configurable", {}) or config.get("configurable", {})
+            # 从 config 中获取 user_id，支持多种格式
+            configurable = {}
+            if hasattr(config, "configurable"):
+                configurable = config.configurable or {}
+            elif isinstance(config, dict):
+                configurable = config.get("configurable", {})
+            elif hasattr(config, "get"):
+                configurable = config.get("configurable", {})
+            
             user_id = configurable.get("user_id", "anonymous")
+            logger.debug(f"[graph] chat_node 尝试加载用户画像，user_id={user_id}")
             user_profile = await get_user_memory(store, user_id)
         injected_msgs = []
         injected_msgs.append(SystemMessage(content="你现在是一个名为 PgoAgent 的智能助手，由 PgoAgent 项目开发。你目前正在和用户进行对话，请根据用户的问题和上下文，给出合适的回答。"))
@@ -663,7 +669,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
             injected_msgs.append(
                 SystemMessage(
                     content=(
-
+                        
                         f"用户画像（参考）：{profile_summary}\n"
                         "提示：个性化回答，不要复述画像。"
                     )
@@ -691,6 +697,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         # 对话裁剪
         total_tokens = count_tokens_approximately(msgs_for_llm)
         if total_tokens > input_limit:
+            logger.info(f"[graph] chat_node 触发裁剪，超过上限 {input_limit}")
             trimmed = trim_messages(
                 msgs_for_llm,
                 strategy="last",
@@ -709,10 +716,10 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
                     trimmed = [SystemMessage(content="历史已裁剪，请继续对话。")]
 
             msgs_for_llm = trimmed
+        logger.debug("[graph] chat_node 准备调用 LLM.ainvoke()")
         response: BaseMessage = await llm.ainvoke(msgs_for_llm)
+        logger.debug("[graph] chat_node LLM 调用完成")
         usage_delta = extract_token_usage(response)
-        if PRINT_SWITCH:
-            print(f"[chat_node]Token增量{usage_delta}")
         if getattr(response, "id", None) is None:
             response.id = str(uuid.uuid4())
         response_pairs = sliding_window_add(conversation_pairs, response)
@@ -775,28 +782,19 @@ def agent_choice(state: State):
     # ——优先检查显式状态机——
     if step_status == "plan_done":
         # 所有计划步骤完成，进入总结
-        if PRINT_SWITCH:
-            logger.info(f"[agent_choice] 状态机：plan_done → 进入总结阶段")
         return "think-answer"
 
     if step_status == "fail":
         # 执行失败，强制结束
-        if PRINT_SWITCH:
-            logger.info(f"[agent_choice] 状态机：fail → 强制结束")
         return "think-answer"
 
     # 安全保护：如果循环超过10次，强制结束
     if loop_count >= 10:
-        if PRINT_SWITCH:
-            print(f"[错误] agent_node 循环超过10次，强制结束！")
-            print(f"[错误] 当前步骤索引: {current_step_index}/{len(plan_steps)}")
-            print(f"[错误] 剩余步骤: {plan_steps[current_step_index:] if current_step_index < len(plan_steps) else []}")
+        logger.warning("Agent循环超过10次，对话太过繁杂，已出错!")
         return "think-answer"
 
     # ——检查索引边界——
     if not plan_steps or current_step_index >= len(plan_steps):
-        if PRINT_SWITCH:
-            logger.warning(f"[agent_choice] 步骤索引超出范围 → 进入总结")
         return "think-answer"
 
     # ——检查是否有工具调用（最高优先级）——
@@ -812,14 +810,10 @@ def agent_choice(state: State):
     # ——没有工具调用，根据状态决定——
     if step_status == "step_done":
         # 当前步骤完成，继续执行下一步
-        if PRINT_SWITCH:
-            print(f"[agent_choice] 状态机：step_done → 继续执行步骤 [{current_step_index + 1}/{len(plan_steps)}]")
         return "self-think"
 
     if step_status == "continue":
         # 当前步骤未完成，继续思考当前步骤
-        if PRINT_SWITCH:
-            print(f"[agent_choice] 状态机：continue → 继续当前步骤 [{current_step_index + 1}/{len(plan_steps)}]")
         return "self-think"
 
     # 默认继续执行
