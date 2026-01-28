@@ -253,7 +253,7 @@ function renderConversations(convs) {
     setupConversationMenus();
 }
 
-// 为会话项绑定更多操作菜单（只实现删除）
+// 为会话项绑定更多操作菜单（重命名 / 置顶 / 删除）
 function setupConversationMenus() {
     // 先移除页面上已有的菜单
     document.querySelectorAll('.conversation-menu').forEach(menu => menu.remove());
@@ -272,6 +272,12 @@ function setupConversationMenus() {
             const menu = document.createElement('div');
             menu.className = 'conversation-menu';
             menu.innerHTML = `
+                <div class="conversation-menu-item" data-action="rename" data-conversation-id="${convId}">
+                    重命名
+                </div>
+                <div class="conversation-menu-item" data-action="pin" data-conversation-id="${convId}">
+                    置顶
+                </div>
                 <div class="conversation-menu-item danger" data-action="delete" data-conversation-id="${convId}">
                     删除
                 </div>
@@ -283,11 +289,21 @@ function setupConversationMenus() {
             menu.style.top = `${top}px`;
             menu.style.left = `${left}px`;
 
-            // 点击菜单项：删除会话
-            menu.querySelector('[data-action="delete"]').addEventListener('click', async (e) => {
+            // 菜单点击事件：根据 data-action 分发
+            menu.addEventListener('click', async (e) => {
                 e.stopPropagation();
+                const item = e.target.closest('.conversation-menu-item');
+                if (!item) return;
+                const action = item.dataset.action;
                 menu.remove();
-                await handleDeleteConversation(convId);
+
+                if (action === 'rename') {
+                    await handleRenameConversation(convId);
+                } else if (action === 'pin') {
+                    await handlePinConversation(convId);
+                } else if (action === 'delete') {
+                    await handleDeleteConversation(convId);
+                }
             });
         });
     });
@@ -333,6 +349,87 @@ async function handleDeleteConversation(conversationId) {
     } catch (error) {
         console.error('Failed to delete conversation:', error);
         alert('删除对话失败，请稍后重试');
+    }
+}
+
+// 重命名会话（PATCH /api/v1/conversations/:id）
+async function handleRenameConversation(conversationId) {
+    if (!conversationId) return;
+
+    // 获取当前标题作为默认值
+    const item = document.querySelector(`.conversation-item[data-conversation-id="${conversationId}"]`);
+    const currentTitle = item?.querySelector('.conversation-title')?.textContent.trim() || '';
+
+    const newName = window.prompt('重命名对话', currentTitle || '新建对话');
+    if (newName === null) return; // 用户取消
+
+    const trimmed = newName.trim();
+    if (!trimmed) {
+        alert('对话名称不能为空');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/conversations/${conversationId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                conversation_name: trimmed,
+            }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            alert(error.error || '重命名失败，请稍后重试');
+            return;
+        }
+
+        // 本地立即更新标题，提升体验
+        if (item) {
+            const titleEl = item.querySelector('.conversation-title');
+            if (titleEl) {
+                titleEl.textContent = trimmed;
+            }
+        }
+
+        // 刷新列表，保证排序等状态正确
+        await loadConversations();
+    } catch (error) {
+        console.error('Failed to rename conversation:', error);
+        alert('重命名失败，请稍后重试');
+    }
+}
+
+// 置顶会话（PATCH /api/v1/conversations/:id，设置 PinToTop=true）
+async function handlePinConversation(conversationId) {
+    if (!conversationId) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/conversations/${conversationId}`, {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                pin_to_top: true,
+            }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            alert(error.error || '置顶失败，请稍后重试');
+            return;
+        }
+
+        // 后端通过更新 created_at 实现置顶，这里直接重新加载列表
+        await loadConversations();
+    } catch (error) {
+        console.error('Failed to pin conversation:', error);
+        alert('置顶失败，请稍后重试');
     }
 }
 
@@ -809,16 +906,16 @@ async function handleStreamResponse(response) {
                                 data.content.includes('Pgo大模型正在') || data.content.includes('Pgo正在');
                             
                             if (isStatusMessage) {
-                                // 这是节点状态消息，直接替换显示（不追加到fullContent）
+                                // 这是节点状态消息，直接替换显示（不追加到 fullContent）
                                 if (aiMessageElement) {
                                     aiMessageElement.textContent = data.content;
                                     scrollToBottom();
                                 }
                             } else {
-                                // 这是实际内容，追加显示
+                                // 这是实际内容，追加显示，并做格式化（换行 / 加粗）
                                 fullContent += data.content;
                                 if (aiMessageElement) {
-                                    aiMessageElement.textContent = fullContent;
+                                    aiMessageElement.innerHTML = formatMessageContent(fullContent);
                                     scrollToBottom();
                                 }
                             }
@@ -869,7 +966,7 @@ function appendMessage(role, content, createdAt, tokenUsage) {
                 }
             </div>
             <div class="message-content">
-                <div class="message-text">${escapeHtml(content)}</div>
+                <div class="message-text">${formatMessageContent(content)}</div>
                 <div class="message-time">${time}${tokenUsage ? ` · Token: ${tokenUsage}` : ''}</div>
             </div>
         </div>
@@ -1353,6 +1450,11 @@ function formatMessageContent(text) {
 
     // 处理换行：\n -> <br>
     let html = escaped.replace(/\r\n|\r|\n/g, '<br>');
+
+    // 如果模型没有显式换行，但使用了 "1. xxx 2. xxx" 这类编号，
+    // 尝试在句末标点后、编号前自动插入换行，提升可读性
+    // 示例："...方面： 1. **A** ... 2. **B** ..." -> "...方面：<br><br>1. **A** ...<br><br>2. **B** ..."
+    html = html.replace(/([。！？；:：])\s*(\d+)\.\s*/g, '$1<br><br>$2. ');
 
     // 处理简单粗体：**xxx** -> <strong>xxx</strong>
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
