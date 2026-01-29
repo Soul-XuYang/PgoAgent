@@ -22,13 +22,26 @@ import (
 )
 
 const (
-	PAGE_SIZE    = 20
-	TITLE_PROMT  = "请针对下述用户的问题，生成一个简洁明了的对话标题，[要求]:无需标注直接输出即可：	\n用户输入:"
-	FIRST_QUERY  = "回答上述用户的问题"
-	CHAT_TIMEOUT = 5 * time.Minute
-	USER_ROLE    = "user"
-	AI_ROLE      = "assistant"
+	PAGE_SIZE        = 20
+	MAX_TITLE_LENGTH = 64 // 易错，这个是字段长度，易错
+	FIRST_QUERY      = "回答上述用户的问题"
+	CHAT_TIMEOUT     = 5 * time.Minute
+	USER_ROLE        = "user"
+	AI_ROLE          = "assistant"
 )
+
+var titlePromt string = "请针对下述用户的问题，生成一个简洁的对话标题，标题长度不超过" + strconv.Itoa(MAX_TITLE_LENGTH) + "个字符，[要求]:无需标注直接输出即可"
+
+func truncateString(s string, maxLen int) string { //按照对应的最大长度剪切
+	if maxLen <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen])
+}
 
 type Message struct {
 	ID        string    `json:"id"`
@@ -93,13 +106,7 @@ func CreateConversations(c *gin.Context) {
 	// 先调用后端大模型服务生成会话标题
 	conversationTitle, err := global.GRPCClient.Chat(
 		ctxWithToken,
-		TITLE_PROMT+req.UserQuery,
-		userID.(string),
-		req.ConversationID,
-	)
-	conversationContent, err := global.GRPCClient.Chat(
-		ctxWithToken,
-		FIRST_QUERY,
+		titlePromt+req.UserQuery,
 		userID.(string),
 		req.ConversationID,
 	)
@@ -108,14 +115,27 @@ func CreateConversations(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"GRPC error": err.Error()})
 		return
 	}
+	conversationContent, err := global.GRPCClient.Chat(
+		ctxWithToken,
+		FIRST_QUERY,
+		userID.(string),
+		req.ConversationID,
+	)
+	if err != nil {
+		log.L().Error("CreateConversations failed to generate conversation content, GRPC error:", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"GRPC error": err.Error()})
+		return
+	}
 
 	now := time.Now() //获取当前时间
+	// 截断对话标题，确保不超过数据库字段限制
+	truncatedTitle := truncateString(conversationTitle.Reply, MAX_TITLE_LENGTH)
 	// 使用事务保证 会话 + 首条消息 一致性
 	err = global.DB.Transaction(func(tx *gorm.DB) error { //gorm写对应的函数
 		// 创建会话记录 -因为外键约束的操作，父表需要先创建- 后续加入到对应的事务队列里
 		conversation := &models.Conversations{
 			ID:               req.ConversationID,
-			ConversationName: conversationTitle.Reply,
+			ConversationName: truncatedTitle,
 			UserID:           userID.(string),
 		}
 		if err := tx.Create(conversation).Error; err != nil {
@@ -165,7 +185,7 @@ func CreateConversations(c *gin.Context) {
 	//初始化对应的内容
 	c.JSON(http.StatusCreated, &ConversationCreateResponse{
 		ConversationID:   req.ConversationID,
-		ConversationName: conversationTitle.Reply,
+		ConversationName: truncatedTitle,
 		Messages: []Message{
 			{
 				Role:      USER_ROLE,
@@ -371,6 +391,7 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 	var (
 		fullContent string
 		chunk       = &StreamMessageResponse{} //提前创建好空间，指针传入数据
+		finalTime   time.Time                  // 记录最终消息的创建时间，用于前端显示和数据库保存
 	)
 	// 调用stream对话
 	err = global.GRPCClient.ChatStream(
@@ -391,11 +412,12 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 						NodeName: ch.NodeName, // 传递节点名称，用于前端判断是否是状态消息
 					}
 				} else {
-					//如果是最终回复
+					finalTime = time.Now()
 					chunk = &StreamMessageResponse{ //响应的数据片
 						Content:    ch.Output,
-						TokenUsage: ch.Token, //这有最后一个才给token，因为这里是Langgraph节点传输
-						Final:      true,     // 这里只负责增量展示，最后的 final 另发一条
+						TokenUsage: ch.Token,  //这有最后一个才给token，因为这里是Langgraph节点传输
+						Final:      true,      // 这里只负责增量展示，最后的 final 另发一条
+						CreatedAt:  finalTime, // 传递创建时间给前端，确保与数据库保存时间一致
 						NodeName:   ch.NodeName,
 					}
 
@@ -415,13 +437,15 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 	}
 
 	// 流结束后，创建消息信息和更新会话参数
+	// TODO:这种SSE先给用户消息再存入数据库的流程有问题，存在消息丢失的风险，后续有待优化
 	var assistantMsg models.Messages
 	err = global.DB.Transaction(func(tx *gorm.DB) error {
+
 		assistantMsg = models.Messages{
 			ConversationID: conversationID,
 			Role:           AI_ROLE,
 			Content:        fullContent,
-			CreatedAt:      time.Now(),
+			CreatedAt:      finalTime, 
 		}
 		if err := tx.Create(&assistantMsg).Error; err != nil {
 			return err
@@ -438,7 +462,7 @@ func HandleStreamChat(c *gin.Context, userID string, conversationID string, inpu
 		log.L().Error(" failed to save message or update conversation", zap.Error(err))
 		return
 	}
-
+    
 }
 
 // CancelConversation godoc
@@ -497,6 +521,7 @@ type ListMessagesResponse struct {
 	Messages []Message `json:"messages"`
 }
 
+// 获取会话的消息列表，这里是前端指定对应得limit实现对应得滚轮滑动显示聊天记录得操作
 // ListConversationMessages godoc
 // @Summary     获取指定会话下的消息列表
 // @Tags        Conversations
@@ -673,7 +698,9 @@ func ModifiedConversation(c *gin.Context) {
 	now := time.Now() // 获取当前时间
 	err := global.DB.Transaction(func(tx *gorm.DB) error {
 		if req.ConversationName != "" {
-			if err := tx.Model(&models.Conversations{}).Where("id = ? and user_id = ?", convID, userID.(string)).Update("conversation_name", req.ConversationName).Error; err != nil {
+			// 截断用户输入的对话名称，确保不超过数据库字段限制
+			truncatedName := truncateString(req.ConversationName, MAX_TITLE_LENGTH)
+			if err := tx.Model(&models.Conversations{}).Where("id = ? and user_id = ?", convID, userID.(string)).Update("conversation_name", truncatedName).Error; err != nil {
 				return err
 			}
 

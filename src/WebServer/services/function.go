@@ -85,8 +85,9 @@ func (c *Client) ChatStream(ctx context.Context, userInput string, userID, threa
 	}
 
 	for {
+		// 接收流式响应
 		chunk, err := stream.Recv()
-		if err == io.EOF {
+		if err == io.EOF { // io标识符
 			break
 		}
 		if err != nil {

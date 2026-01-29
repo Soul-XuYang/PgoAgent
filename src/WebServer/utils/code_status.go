@@ -53,11 +53,11 @@ func NewCodeCounter() *CodeCounter {
 			"Markdown":   {".md", ".markdown"},
 			"YAML":       {".yml", ".yaml"},
 			"TOML":       {".toml"},
-			"JSON":       {".json"},
-			"XML":        {".xml"},
-			"SQL":        {".sql"},
-			"txt":        {".txt"},
-			"Docker":     {".dockerfile", ".dockerignore"},
+			// "JSON":       {".json"},  //忽略，多为微调的数据集模板
+			"XML":    {".xml"},
+			"SQL":    {".sql"},
+			"txt":    {".txt"},
+			"Docker": {".dockerfile", ".dockerignore"},
 		},
 		// 易错
 		IgnoreDirs: map[string]bool{ // 忽略的目录-这里是提前写死了
@@ -324,7 +324,7 @@ func (cc *CodeCounter) PrintReport() {
 	for i := 0; i < len(sorted) && i < 5; i++ {
 		fmt.Printf("  %2d. %-12s: %d 个文件\n", i+1, sorted[i].Lang, sorted[i].Stats.Files)
 	}
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(strings.Repeat("=", 75))
 	fmt.Println("历史记录:")
 	for index, node := range cc.history_record.GetAll() {
 		if r, ok := node.(map[string]string); ok {
@@ -332,7 +332,7 @@ func (cc *CodeCounter) PrintReport() {
 				index+1, r["filepath"], r["count"], r["time"])
 		}
 	}
-	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(strings.Repeat("=", 75))
 }
 func chooseSize(size int64) (float64, string) {
 	const (
