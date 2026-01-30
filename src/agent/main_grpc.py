@@ -6,6 +6,9 @@ import sys
 import os
 # 忽略jieba 分词库内部使用了已弃用的 pkg_resources API警告
 import warnings
+
+from langchain_community.vectorstores.oraclevs import log_level
+
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 # 添加项目路径
 from agent.agent_grpc import agent_pb2, agent_pb2_grpc
@@ -381,7 +384,7 @@ async def serve(host: str = "[::]", port: int = 50051, DSN: str = "", max_thread
 
 if __name__ == "__main__":
     animated_banner()
-    setup_logger()
+    setup_logger(log_level= "debug")
     if sys.platform.startswith("win"): # 如果是windows系统
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) # 设置事件循环策略Selector
     else:

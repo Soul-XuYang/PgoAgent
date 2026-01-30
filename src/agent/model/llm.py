@@ -1,7 +1,7 @@
 from langchain_openai import ChatOpenAI
 from agent.config import API_KEY, BASE_URL
 from typing import Tuple, List
-from PgoModel import ChatAI
+from agent.model import ChatAI
 # 只要继承ChatOpenAI 就可以使用，这里对它进行了改造
 llm = ChatAI(
     model="moonshot-v1-8k",  # 改为 model 而不是 model_name

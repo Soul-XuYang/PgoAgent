@@ -1,7 +1,6 @@
 import asyncio
 import sys
 
-from langchain_community.vectorstores.oraclevs import log_level
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage

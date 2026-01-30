@@ -7,7 +7,7 @@ import time
 import numpy as np
 from typing import List, Union, TypedDict
 from langchain.embeddings.base import Embeddings
-from agent.config.logger_config import logger
+from agent.config.log import logger
 
 class EmbeddingRequest(TypedDict):
     model: str

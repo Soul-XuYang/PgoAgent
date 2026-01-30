@@ -5,11 +5,14 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from langchain_core.messages.utils import count_tokens_approximately
 from langmem.short_term import SummarizationNode
 from langgraph.graph.message import add_messages
-from agent.my_llm import llm,MODEL_MAX_INPUT
+from agent.model.llm import llm,MODEL_MAX_INPUT
 from agent.tools import LOCAL_TOOLS
 from agent.database import db_url, check_checkpoint_exist
 from langchain.agents import create_agent
 import uuid
+
+# === 一个基本流程框图的测试 ===
+
 # -------- State --------
 class State(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages] # 消息列表

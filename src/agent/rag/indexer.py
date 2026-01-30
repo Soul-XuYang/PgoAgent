@@ -2,7 +2,8 @@ from typing import List, Optional, Any
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 import jieba
-from agent.config.logger_config import logger
+from agent.config.log import logger
+
 class BM25Indexer:
     """
     负责：

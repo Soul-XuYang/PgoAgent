@@ -8,20 +8,20 @@ import ipaddress
 import argparse
 import os
 
-def generate_certificate(days_valid:int,cert_dir:str):
+
+def generate_certificate(days_valid: int, cert_dir: str):
     os.makedirs(cert_dir, exist_ok=True)
     # 生成服务器私钥
 
     private_key = rsa.generate_private_key(
-        public_exponent=65537,# 公钥指数
+        public_exponent=65537,  # 公钥指数
         key_size=2048,
     )
-
 
     # 创建证书主题
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COUNTRY_NAME, "CN"),
-        x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Beijing"), # 地名随意
+        x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "Beijing"),  # 地名随意
         x509.NameAttribute(NameOID.LOCALITY_NAME, "Beijing"),
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "My organization"),
         x509.NameAttribute(NameOID.COMMON_NAME, "my-service.local"),
@@ -29,9 +29,9 @@ def generate_certificate(days_valid:int,cert_dir:str):
 
     # 使用新的时间API-设置有效时间
     cert = x509.CertificateBuilder().subject_name(
-        subject # 主题
+        subject  # 主题
     ).issuer_name(
-        issuer # 签发人
+        issuer  # 签发人
     ).public_key(
         private_key.public_key()
     ).serial_number(
@@ -64,11 +64,12 @@ def generate_certificate(days_valid:int,cert_dir:str):
 
     return cert, private_key
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate SSL certificate')
     parser.add_argument('--days', '-d', type=int, default=365,
                         help='Number of days the certificate should be valid (default: 365)')
-    parser.add_argument('--cert_dir', '-c', type=str, default='cert',
+    parser.add_argument('--cert_dir', '-c', type=str, default='../certs',
                         help='Number of days the certificate should be valid (default: 365)')
     args = parser.parse_args()
     generate_certificate(args.days, args.cert_dir)

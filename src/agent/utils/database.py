@@ -1,6 +1,9 @@
 import os
 from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
+# 短期记忆力的数据库操作
+
+
 load_dotenv()  # 加载环境变量
 db_url = os.getenv("DATABASE_URL")
 

@@ -2,10 +2,12 @@ import uuid
 from typing import List, Optional, Sequence, Dict, Iterator, Any, Tuple
 from langchain_core.documents import Document
 from agent.config import *
+from agent.rag.database import get_chroma_collection,close_chroma
 from agent.rag.loader import DocumentLoader
-from agent.rag.spliter import TextSplitter
+from .spliter import TextSplitter
 from agent.rag.indexer import BM25Indexer
-
+from .instance import embedder, reranker,async_reranker,async_embedder
+# 这里是chromadb数据库
 # 与测试脚本一致的分隔符设置（兼容递归切分）
 SEPARATORS: list[str] = [
     "\n\n",

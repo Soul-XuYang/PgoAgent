@@ -1,0 +1,114 @@
+# 模型部署配置文件
+# 用于统一管理chat、embedding和rerank模型的部署参数
+
+[global]
+# API密钥
+api_key = "abc123"
+# 默认主机地址
+default_host = "0.0.0.0"
+# 默认数据类型
+default_dtype = "bfloat16"
+# 默认显存利用率
+default_gpu_memory_utilization = 0.9
+# 默认最大并发序列数
+default_max_num_seqs = 128
+# 是否启用请求日志
+enable_log_requests = false
+# 是否启用统计日志
+enable_log_stats = false
+
+[chat]
+model_name = "Qwen3-8B"
+model_path = "./models/Qwen3-8B"
+served_model_name = "Qwen3-8B"
+# GPU配置
+cuda_visible_devices = "1,2"
+tensor_parallel_size = 2
+# 服务配置
+host = "0.0.0.0"
+port = 8000
+# 性能配置
+gpu_memory_utilization = 0.92
+max_num_batched_tokens = 8192
+max_model_len = 40960
+dtype = "bfloat16"
+max_num_seqs = 128
+# API配置
+api_key = "abc123"
+enable_log_requests = false
+enable_log_stats = false
+
+[embedding]
+model_name = "BAAI-bge-m3"
+model_path = "./models/BAAI-bge-m3"
+served_model_name = "BAAI-bge-m3"
+# GPU配置
+cuda_visible_devices = "0"
+tensor_parallel_size = 1
+# 服务配置
+host = "0.0.0.0"
+port = 8000
+# 性能配置
+gpu_memory_utilization = 0.9
+max_num_batched_tokens = 8192
+max_model_len = 8192
+dtype = "bfloat16"
+max_num_seqs = 128
+# API配置
+api_key = "abc123"
+enable_log_requests = false
+enable_log_stats = false
+
+[rerank]
+model_name = "bge-reranker-base"
+model_path = "./models/bge-reranker-base"
+served_model_name = "bge-reranker-base"
+# GPU配置
+cuda_visible_devices = "0"
+tensor_parallel_size = 1
+# 服务配置
+host = "0.0.0.0"
+port = 8000
+# 性能配置
+gpu_memory_utilization = 0.9
+max_num_batched_tokens = 8192
+max_model_len = 8192
+dtype = "bfloat16"
+max_num_seqs = 128
+# 向量维度（模型内部固定为1024，此处仅作文档和一致性记录）
+embedding_dim = 1024
+# API配置
+api_key = "abc123"
+enable_log_requests = false
+enable_log_stats = false
+
+[test]
+# API基础URL,这里需依据对应的port进行修改
+base_url = "http://localhost:8000/v1"
+api_key = "abc123"
+
+[test.chat]
+temperature = 0.5
+max_tokens = 4096
+stream = true
+# chat这里是终端CLI用户输入内容-循环加以测试使用，可依据需要进行修改
+
+[test.embedding]
+test_texts = [
+    "测试BAAI/bge-m3的文本嵌入功能",
+    "今天天气很好，适合出门游玩",
+    "大语言模型的文本嵌入技术在RAG中应用广泛"
+]
+max_length = 512
+normalize_embeddings = true
+
+[test.rerank]
+query = "什么是机器学习？"
+max_length = 512
+documents = [
+    "机器学习是人工智能的一个分支，通过算法让计算机从数据中学习。",
+    "今天天气很好，适合出门游玩。",
+    "机器学习包括监督学习、无监督学习和强化学习等多种方法。",
+    "我喜欢吃苹果和香蕉。",
+    "深度学习是机器学习的一个子领域，使用神经网络进行学习。"
+]

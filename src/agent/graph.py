@@ -20,7 +20,7 @@ from agent.tools import *
 from agent.mcp_server.mcp_external_server import get_mcp_tools  # 假设这里提供 get_mcp_tools
 from agent.tools import BLACK_LIST
 from agent.subAgents.planAgent import planner_graph,CAPABILITY_TO_TOOLS
-from my_llm import llm
+from agent.model.llm import llm
 from agent.utils import extract_token_usage,accumulate_usage
 # 内存形式
 from agent.subAgents.memoryAgent import memory_graph, get_user_memory
@@ -157,11 +157,9 @@ async def summarization_node(
 
 # 工具结果判断函数
 def tool_result_judgement(tool_msg: ToolMessage) -> bool:
-    tool_content = (tool_msg.content or "").strip()
+    tool_content = (tool_msg.content or "").strip() # langgraph对工具结果的返回结果的content是json格式
     # 无内容失败或者工具执行失败
-    if not tool_content :
-        return True
-    if "工具执行失败" in tool_content or "❌" in tool_content:
+    if not tool_content or "工具执行失败" in tool_content or "❌" in tool_content:
         return True
     # RAG 工具特殊判断
     if tool_msg.name == "rag_retrieve":
@@ -175,6 +173,24 @@ def tool_result_judgement(tool_msg: ToolMessage) -> bool:
                     return True
                 if "未找到" in str(contexts) or "未找到相关内容" in str(contexts) or "知识库中未找到" in str(contexts):
                     return True
+        except (json.JSONDecodeError, Exception):
+            pass  # 如果不是 JSON，继续下面的通用判断
+    
+    # shell_exec 工具特殊判断
+    if tool_msg.name == "shell_exec":
+        try:
+            data = json.loads(tool_content)
+            if isinstance(data, dict):
+                # 如果 success 为 False 且有 error 字段，视为失败
+                if data.get("success") is False and "error" in data:
+                    return True
+                # 如果 success 为 True，即使 stdout 为空也视为成功（某些命令可能没有输出）
+                if data.get("success") is True:
+                    return False
+                # 如果 success 为 False 但 return_code 存在，说明命令执行了但返回了非0状态码
+                # 这种情况下，如果 stdout 或 stderr 有内容，可以视为部分成功，不需要重试
+                if data.get("success") is False and (data.get("stdout") or data.get("stderr")):
+                    return False  # 有输出内容，不需要重试
         except (json.JSONDecodeError, Exception):
             pass  # 如果不是 JSON，继续下面的通用判断
 
@@ -542,6 +558,11 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         if relevant_tool_names:
             # 根据工具名称从 all_tools 中筛选出实际的工具对象-里面包含基本的工具和RAG工具
             relevant_tools = [t for t in LOCAL_TOOLS if t.name in relevant_tool_names]
+            # 调试信息：检查工具是否被正确加载
+            if PRINT_SWITCH:
+                available_tool_names = [t.name for t in LOCAL_TOOLS]
+                logger.debug(f"[agent_node] LOCAL_TOOLS 中可用的工具={available_tool_names}")
+
         else:
             relevant_tools = []  # none 或者未知 capability，不绑定工具
         if "external_mcp" in current_capability and mcp_tools: # 绑定MCP
@@ -550,6 +571,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         ctx = state.get("context", {})
         user_question = ctx.get("current_user_question", "")
         system_content = f"问题: {user_question}\n当前步骤: {current_step}\n"
+        # 分类写不同的提示词
         if current_capability == "rag_retrieve":
             system_content += (
                 "1,必须调用 rag_retrieve 完成本步骤，不得跳过。\n"
@@ -558,6 +580,12 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
             )
         elif current_capability in {"get_time", "calculate"}:
             system_content += "直接调用工具获取结果，无需额外说明。"
+        elif current_capability == "code_exec":
+            system_content += (
+                "1. 必须调用 shell_exec 工具执行命令来完成本步骤。\n"
+                "2. 获得结果后直接基于工具返回的数据回答，不要重复调用工具。\n"
+                "3. 如果命令执行失败（success=false），说明失败原因即可，不要重试。"
+            )
         elif relevant_tools:
             system_content += "需要使用工具完成当前步骤。"
             system_content += "⚠️ 重要提示：每个工具只需调用一次，获得结果后立即停止，不要重复调用。"
@@ -584,7 +612,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         allow_use_tool = bool(relevant_tools) and (tool_attempts < max_tool_attempts)
         override = None
         if msgs and isinstance(msgs[-1], ToolMessage):
-            judge_bad = tool_result_judgement(msgs[-1])
+            judge_bad = tool_result_judgement(msgs[-1]) # 判断工具结果是否存在问题
             if judge_bad and allow_use_tool:
                 # RAG 工具的特殊重试提示
                 if msgs[-1].name == "rag_retrieve":
@@ -630,7 +658,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         else:
             next_step = current_plan_step + 1
             next_status = "plan_done" if next_step >= len(plan_steps) else "step_done"
-            next_tool_attempts = 0  # ✅ 推进 step 必须重置 这个易错
+            next_tool_attempts = 0  # 易错
 
         return {
             "messages": [response],
@@ -659,7 +687,6 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
                 configurable = config.get("configurable", {})
             
             user_id = configurable.get("user_id", "anonymous")
-            logger.debug(f"[graph] chat_node 尝试加载用户画像，user_id={user_id}")
             user_profile = await get_user_memory(store, user_id)
         injected_msgs = []
         injected_msgs.append(SystemMessage(content="你现在是一个名为 PgoAgent 的智能助手，由 PgoAgent 项目开发。你目前正在和用户进行对话，请根据用户的问题和上下文，给出合适的回答。"))
@@ -697,7 +724,7 @@ async def create_graph(store:Store,config: dict,max_tool_attempts:int=2,checkpoi
         # 对话裁剪
         total_tokens = count_tokens_approximately(msgs_for_llm)
         if total_tokens > input_limit:
-            logger.info(f"[graph] chat_node 触发裁剪，超过上限 {input_limit}")
+            logger.debug(f"[graph] chat_node 触发裁剪，超过上限 {input_limit}")
             trimmed = trim_messages(
                 msgs_for_llm,
                 strategy="last",
@@ -867,6 +894,7 @@ if __name__ == "__main__":
             print(100*'=')
             test_state1 = {
             "messages": [
+                # 使用mcp工具
                 # HumanMessage(content="作为大模型，请问你手头有没有mcp协议的外部工具呢?帮我规划下从电子科大清水河校区到"
                 #                      "四川大学望江校区的路线(坐地铁和步行)？如果我现在出发，那我后续到达川大的时间预计是多少呢?")
                 HumanMessage(content="请问你可以帮我查询下知识库里:慢羊羊给懒羊羊四个的重要道具是什么呢?")

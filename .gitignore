@@ -4,7 +4,7 @@ VideoCode/
 
 # 忽略的虚拟环境
 .vscode/
-*.env
+
 *.venv/
 
 *.word
@@ -15,12 +15,14 @@ VideoCode/
 backup/
 # 忽略的日志文件
 *.log
-uv.lock
+
 # 向量数据库信息
-chroma_db/
+
 # 测试代码
 go_test/
 my_lab/
+__pycache__/
 
-*.crt
+# 忽略的证书或者密钥文件
+*.crt 
 *.key

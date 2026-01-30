@@ -9,7 +9,7 @@ from langgraph.store.postgres import  AsyncPostgresStore
 from pydantic import BaseModel
 from agent.config import PRINT_SWITCH,DATABASE_DSN
 from .state_utils import get_latest_HumanMessage, has_obvious_profile_info
-from agent.my_llm import llm
+from agent.model.llm import llm
 from agent.utils import extract_token_usage
 
 

@@ -5,15 +5,15 @@ import os
 from typing import Any
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from agent.my_llm import llm
+from agent.model.llm import llm
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from agent.config.basic_config import logger
+from agent.config.log import logger
 
 # python_mcp_server_config = {
 #     "url": "http://127.0.0.1:7070/sse",
 #     "transport": "sse",
 # }
-user ="admin"
+user ="admin" # 管理员文件夹
 BASE_DIR = Path(__file__).resolve().parents[3]  # your-project/  获取文件路径并向上走
 MCP_CONFIG_DIR = BASE_DIR /  os.path.join("mcp_configs", user)# my-project/mcp_configs/
 

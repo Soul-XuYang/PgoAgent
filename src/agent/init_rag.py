@@ -1,4 +1,4 @@
-from agent.rag.RAGEngine import RagEngine
+from agent.rag.RagEngine import RagEngine
 from agent.rag.loader import DocumentLoader,get_files_in_folder
 from agent.rag.spliter import TextSplitter
 from agent.config import FILE_PATH
