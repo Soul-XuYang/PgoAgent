@@ -1,11 +1,11 @@
 # PgoAgent
 ![Version](https://img.shields.io/badge/version-v0.0.3-blue.svg)    ![License](https://img.shields.io/badge/license-MIT-green.svg)      ![Python](https://img.shields.io/badge/python-3.12+-blue.svg)         ![Go](https://img.shields.io/badge/go-1.24+-blue.svg) 
 
-本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于**Langgraph + Chromadb + Agentic Rag + MCP**系统)。它采用**vllm**本地部署的大语言模型(**LLM**)与**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理输出。
+本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于**Langgraph + Chromadb + Agentic Rag + MCP**系统)。它采用**vllm**本地部署的大语言模型(**LLM**)并使用**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理**Agent服务端**的输出。
 
 
 **版本**: v0.0.3  
-**作者**: soul-xuyang  
+**作者**: Soul-XuYang 
 **许可证**: MIT 
 
 ---
@@ -13,7 +13,7 @@
 This is an intelligent agent system named **PgoAgent**, featuring long-term and short-term memory, multi-agent collaboration capabilities, local tool integration, and retrieval-augmented generation functions (based on **Langgraph** + **Chromadb ** + **Agentic Rag + MCP**). It employs a locally deployed large language model(**LLM**) using **vllm** and stores user data with **PostgreSQL**, while the backend coordinates agent outputs via **gRPC**, **GORM**, and **Gin** framework.
 
 **version**: v0.0.3
-**author**: soul-xuyang
+**author**: Soul-XuYang
 **license**: MIT
 
 ### 技术栈 - Technology Stack
@@ -22,11 +22,11 @@ This is an intelligent agent system named **PgoAgent**, featuring long-term and 
 - **python3.12+**: 开发环境基础，使用类型注解(typing)与Pydantic进行类型定义和验证,使用logguru进行日志管理。
 - **asyncio**: 基于异步事件循环，实现 I/O 密集型任务的并发执行与工具调用调度。。
 - **Langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架，构建相应的工作流图和工作节点，同时兼容MCP工具和本地编写的基本工具
-- **多Agent** :
+- **多Agent** :实际将多个功能分为多个子图进行处理
     1. 智能判断是否需要调用工具将复杂任务分解为可执行的步骤序列
     2. 管理用户长期记忆和上下文信息
     3. 执行文件操作、代码执行、RAG 检索等任务
-- **Agentic RAG**: 本项目使用Agentic RAG(Retrieval Augmented Generation)并采用双阈值+混合检索(向量检索 + BM25 关键词检索)+Rerank的方式进行检索，可进行召回与重排(内置循环次数，限制其推理深度)。
+- **Agentic RAG**: 本项目使用Agentic RAG(Retrieval Augmented Generation)并采用双阈值+混合检索(向量检索 + BM25 关键词检索)+ Rerank的方式进行检索，可进行召回与重排(内置循环次数，限制其推理深度)。
 - **MCP**: 可集成MCP工具，支持 MCP 协议的工具接入与扩展。
 - **Finetunning**: 大模型微调模块，可进行模型微调，并保存模型参数。
 - **VLLM**: 微调的大模型使用**vllm**框架进行部署相应的chat、emebdding和rerank模型服务。
@@ -173,7 +173,7 @@ Agent工作流程可见本文项目的workflow图：
 - **go**: 该编程语言具有高并发、网络性能强、低资源的能力。
 - **SSE**: 实时推送节点事件给前端，支持流式对话。
 - **protobuf**: 语言无关的序列化协议，可支持任意语言的序列化与反序列化，可支持任意语言的编解码，可支持任意语言的流式编解码。
-- **grpc**: 可承接高性能的结果上报。gRPC 使用 Protobuf，通常比 JSON/XML 更紧凑，且编解码更快；同时支持流式传输，适合大模型增量返回。此外具有适配多语言的通信环境。
+- **grpc**: 可承接高性能的结果上报。gRPC 使用 **Protobuf**，其通常比 JSON/XML 更紧凑，且编解码更快；同时支持流式传输，适合大模型增量返回。此外具有适配多语言的通信环境。
 - **gin**: 承接浏览器/APP 的 HTTP 请求；鉴权、限流、会话、上传等功能，这里采用自定义的LRU和令牌桶算法使用。
 - **gorm**: 构建用户、对话、消息列表，可记录和查询用户的对话历史，支持用户对于LLM对自身用户画像的修改和删除。
 - **swagger**: 构建WEB服务端的API文档。
@@ -231,7 +231,7 @@ HTTP请求(用户输入, mode=invoke|stream, stream_level=node)
 
 ---
 ### 部署和微调模型 - Deploy and Fine-Tunning Model 
-详情可见项目根目录下的src/ModelDeployTune/README.md文件，该文档具体阐述了如何对模型进行微调。
+详情可见项目根目录下的`src/ModelDeployTune/README.md`文件，该文档具体阐述了如何对模型进行微调。
 #### 部署
 首先依据对应的requirements.txt安装对应的python环境。
 需查看config.py文件依据所需修改相应参数并下载所需模型进行部署。
