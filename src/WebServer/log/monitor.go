@@ -51,7 +51,7 @@ func (m *Monitor) Start(path string) { // 开启一个新的线程
 		code_counter.PrintReport()
 
 		for {
-			select { //通过ctx控制何时停止
+			select { 
 			case <-ticker.C:
 				elapsed := time.Since(m.startTime)
 				days := int(elapsed.Hours()) / 24

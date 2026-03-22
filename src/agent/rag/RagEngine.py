@@ -25,7 +25,7 @@ SEPARATORS: list[str] = [
     "",
 ]
 # === RAG参数 ===
-query_distance_threshold = 0.5 # 距离阈值-越小要求越高
+query_distance_threshold = 0.3 # 距离阈值-越小要求越高
 rerank_distance_threshold = 0.1 # 重排序距离阈值-越大要求越高
 K= 60
 #

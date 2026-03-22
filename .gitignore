@@ -4,6 +4,7 @@ VideoCode/
 
 # 忽略的虚拟环境
 .vscode/
+.idea/
 
 *.venv/
 
@@ -16,7 +17,8 @@ backup/
 # 忽略的日志文件
 *.log
 
-# 向量数据库信息
+# 向量数据库或者rag数据集
+datasets/
 
 # 测试代码
 go_test/
@@ -26,3 +28,6 @@ __pycache__/
 # 忽略的证书或者密钥文件
 *.crt 
 *.key
+
+# 临时文件
+.langgraph_api/

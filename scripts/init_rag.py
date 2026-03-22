@@ -1,3 +1,4 @@
+# 加载数据到向量数据库中
 from agent.rag.RagEngine import RagEngine
 from agent.rag.loader import DocumentLoader,get_files_in_folder
 from agent.rag.spliter import TextSplitter
@@ -24,3 +25,4 @@ if __name__ == "__main__":
    print(file)
    print(file_extension)
    init_rag_engine(file_name="矩阵.md",mode = "semantic")
+

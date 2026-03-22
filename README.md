@@ -20,7 +20,7 @@ This is an intelligent agent system named **PgoAgent**, featuring long-term and 
 
 #### Python 后端 (智能体核心)
 - **python3.12+**: 开发环境基础，使用类型注解(typing)与Pydantic进行类型定义和验证,使用logguru进行日志管理。
-- **asyncio**: 基于异步事件循环，实现 I/O 密集型任务的并发执行与工具调用调度。。
+- **asyncio**: 基于异步事件循环，实现 I/O 密集型任务的并发执行与工具调用调度。
 - **Langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架，构建相应的工作流图和工作节点，同时兼容MCP工具和本地编写的基本工具
 - **多Agent** :实际将多个功能分为多个子图进行处理
     1. 智能判断是否需要调用工具将复杂任务分解为可执行的步骤序列
@@ -166,7 +166,31 @@ Agent工作流程可见本文项目的workflow图：
 2. 如果调用工具则进入plan节点，如果未调用工具则进入chat节点，其中chat节点会结合用户的长短期记忆力，对用户的问题进行回答。
 3. 如果调用工具，则进入plan节点，开始规划此次对话总共需要哪些步骤，构建相应的计划列表并详细描述每一步的计划步骤可能需要的工具，后续进入agent节点，开始执行思考每一步的步骤和工具，如果需要工具则进入tool节点，开始执行工具，并返回结果给agent节点，agent节点根据结果判断是否需要继续执行下一步，如果继续则进入plan节点，重复上述步骤，直到所有步骤执行完毕。
 4. 上述的2和3步骤最后都统一进入到long_memory节点，程序初次判断是否需要长期存储用户的画像，后则大模型继续判断并补充和完善画像，最后将用户的个人画像返回到数据库中。
+#### 召回率的测试比较实验
+为了提高rag的检索效率，这里引出机器学习其中关于召回率和精确率的概念:
+
+| 指标                | 含义        | 关注点 | 公式简化       |
+| ----------------- | --------- | --- | ---------- |
+| **召回率 Recall**    | 相关的找回来多少  | 不漏掉 | 相关找回 / 总相关 |
+| **精确率 Precision** | 找回来的里对的多少 | 不乱找 | 相关找回 / 总找回 |
+可以看出一个是看实际正确的比例，一个看的是预测争取的比例。
+
+而这里我们为什么主要是使用召回率，**因为对于RAG系统来说，漏了正确的是致命的，但是多了是可以补救的.**多了只是预测中的数量多了，Precision下降，只是多了噪声->可以使用Rerank
+但漏了就是信息少了，完全没有办法，**无法无中生有**。
+
+
+这里土建的新手的数据集可用于验收(json)，需要注意Token的使用率(极其容易爆炸):
+
+| 场景 | 推荐数据集 | 规模 | 下载地址 |
+| :--- | :--- | :--- | :--- |
+| 快速验证（新手） | LiHua-World | 200 条 | https://gitee.com/fuhaoliang/MiniRAG/raw/master/dataset/LiHua-World/data/LiHuaWorld.zip |
+| 标准检索测试 | DuRetrieval | 4000 条 | https://huggingface.co/datasets/C-MTEB/DuRetrieval/resolve/main/data/test.jsonl |
+
+如有兴趣可以使用上方的数据集进行测试，可以查看[MiniRag](https://github.com/yeldhopp/hk-MiniRAG)项目资料(数据集 LiHua-World )，其包含了基本的数据集预处理以及构建使用
+这里我对此进行了了一个基本的实验，我的Rag模型相比于基础的Rag提升了大约10.7%的召回率。
+
 - **补充**: 模型统一针对上述的decision_node、plan_node和long_memory_node微调，以减少实际的模型调用次数和损耗并且使得其更加智能更可以适配本项目的实际需求。 
+
 --- 
 ### Web服务端架构 - Web Service Architecture Diagram
 其Web服务端是为了承接Agent的大模型回答请求，之所以使用grpc和go是为了具备更好的程序体验，二者同时实现职责解耦，提高系统的可维护性和可扩展性。:
@@ -391,6 +415,7 @@ python scripts/init_rag.py
 初始化 RAG（检索增强生成）引擎，加载知识库文件并构建向量索引。
 
 **功能：**
+
 ```python
 init_rag_engine(
     collection_name: str = "my_vector",  # 向量库名称
@@ -657,6 +682,7 @@ TOML                   3              262             5.98KB        1.1%
 希望本项目的实现与代码能对大家有所帮助，欢迎交流与学习。
 最后，如果你觉得项目有价值，也欢迎点个 ⭐ 支持一下！
 
+
 **版本**: v0.0.3  
 **作者**: soul-xuyang  
 **许可证**: MIT 
@@ -676,7 +702,7 @@ TOML                   3              262             5.98KB        1.1%
 11. [DeepSeek+LoRA+FastAPI](https://www.bilibili.com/video/BV1R6P7eVEtd/?spm_id_from=333.337.search-card.all.click&vd_source=6db5e62cb01ffa248caaabea52932f34)
 12. [如何训练一个大模型：LoRA篇](https://blog.csdn.net/xian0710830114/article/details/138710952?ops_request_misc=elastic_search_misc&request_id=7e53df9ba7b0d0e6339a9e1460ed0efd&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~top_positive~default-1-138710952-null-null.nonlogin&utm_term=Lora&spm=1018.2226.3001.4187)
 13. [LORA算法详解](https://blog.csdn.net/qq_41475067/article/details/138155486?ops_request_misc=elastic_search_misc&request_id=7e53df9ba7b0d0e6339a9e1460ed0efd&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~top_click~default-2-138155486-null-null.nonlogin&utm_term=Lora&spm=1018.2226.3001.4187)
-
+14. [MiniRag项目](https://github.com/yeldhopp/hk-MiniRAG)
 > 如有遗漏或不当之处，欢迎联系我进行补充与完善。
 > 希望同构建一个良好的科研、技术环境!
 
