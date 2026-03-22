@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="1c33e989-245c-4113-a476-c5eb3a5bf900" name="更改" comment="">
+      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 8
+}</component>
+  <component name="ProjectId" id="35yaB6ol8vGURr38FzYjuKGlhid" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
+    "Python.RAGEngine.executor": "Run",
+    "Python.__init__.executor": "Run",
+    "Python.agent_grpc_server.executor": "Run",
+    "Python.agent_pb2.executor": "Run",
+    "Python.agent_pb2_grpc.executor": "Run",
+    "Python.basic_tool.executor": "Run",
+    "Python.cleansing.executor": "Run",
+    "Python.config.executor": "Run",
+    "Python.configuration (1).executor": "Run",
+    "Python.convert_messages (1).executor": "Run",
+    "Python.convert_messages.executor": "Run",
+    "Python.csv.executor": "Run",
+    "Python.csv_test (1).executor": "Run",
+    "Python.database.executor": "Run",
+    "Python.dataset (1).executor": "Run",
+    "Python.dataset.executor": "Run",
+    "Python.date.executor": "Run",
+    "Python.embedding_model (1).executor": "Run",
+    "Python.embedding_model.executor": "Run",
+    "Python.embeding.executor": "Run",
+    "Python.font.executor": "Run",
+    "Python.generator.executor": "Run",
+    "Python.graph.executor": "Run",
+    "Python.hash.executor": "Run",
+    "Python.init.executor": "Run",
+    "Python.init_rag.executor": "Run",
+    "Python.jwtInterceptor.executor": "Run",
+    "Python.llm_test.executor": "Run",
+    "Python.loader.executor": "Run",
+    "Python.logger_config.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.main_cli.executor": "Run",
+    "Python.main_grpc (1).executor": "Run",
+    "Python.mcp_config_server.executor": "Run",
+    "Python.mcp_external_server (1).executor": "Run",
+    "Python.mcp_external_server.executor": "Run",
+    "Python.memoryAgent.executor": "Run",
+    "Python.my_agent.executor": "Run",
+    "Python.my_agent1.executor": "Run",
+    "Python.my_llm (1).executor": "Run",
+    "Python.my_llm.executor": "Run",
+    "Python.my_test.executor": "Run",
+    "Python.offline_ingest.executor": "Run",
+    "Python.ok.executor": "Run",
+    "Python.planAgent.executor": "Run",
+    "Python.print.executor": "Run",
+    "Python.rag_retrieve_tool (1).executor": "Run",
+    "Python.rag_retrieve_tool.executor": "Run",
+    "Python.rag_test.executor": "Run",
+    "Python.rerank_model.executor": "Run",
+    "Python.shell_tool.executor": "Run",
+    "Python.spliter.executor": "Run",
+    "Python.t.executor": "Run",
+    "Python.t2.executor": "Run",
+    "Python.test1.executor": "Run",
+    "Python.tls.executor": "Run",
+    "Python.tool1.executor": "Run",
+    "Python.tool2.executor": "Run",
+    "Python.tool_file (1).executor": "Run",
+    "Python.tool_file.executor": "Run",
+    "Python.tool_rag_retrieve.py.executor": "Run",
+    "Python.tool_server.executor": "Run",
+    "Python.tool_sse_server (1).executor": "Run",
+    "Python.tool_steamable_server.executor": "Run",
+    "Python.tool_streamable_http_server (1).executor": "Run",
+    "Python.two.executor": "Run",
+    "Python.ui.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "D:/vscode/workspace/PgoAgent/test/recall_test/datasets",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="D:\vscode\workspace\PgoAgent\test\recall_test\datasets" />
+      <recent name="D:\vscode\workspace\PgoAgent\src\fine_tunning\2_tasks" />
+      <recent name="D:\vscode\workspace\PgoAgent\file" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\vscode\workspace\PgoAgent\test\recall_test" />
+      <recent name="D:\vscode\workspace\PgoAgent\scripts" />
+      <recent name="D:\vscode\workspace\PgoAgent\src\agent" />
+      <recent name="D:\vscode\workspace\PgoAgent\src\agent\rag" />
+      <recent name="D:\vscode\workspace\PgoAgent\src\PgoModel" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.init_rag">
+    <configuration name="config" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="PgoAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/agent/config" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/agent/config/config.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="init_rag" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="PgoAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/scripts" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/init_rag.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="main_cli" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="PgoAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/agent" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/agent/main_cli.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="main_grpc (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="PgoAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/agent" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/agent/main_grpc.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="main_grpc" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="PgoAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/agent" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="D:\vscode\workspace\PgoAgent\src\agent\main_grpc.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.init_rag" />
+        <item itemvalue="Python.main_grpc (1)" />
+        <item itemvalue="Python.main_cli" />
+        <item itemvalue="Python.config" />
+        <item itemvalue="Python.main_grpc" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-0e3be3396995-c546a90a8094-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.23339.19" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="应用程序级" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="默认任务">
+      <changelist id="1c33e989-245c-4113-a476-c5eb3a5bf900" name="更改" comment="" />
+      <created>1764084627593</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1764084627593</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
