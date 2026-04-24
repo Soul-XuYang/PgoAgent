@@ -7,6 +7,28 @@ from agent.model.llm import llm
 from .state_utils import get_latest_HumanMessage
 from agent.utils import extract_token_usage
 from agent.config.basic_config import PRINT_SWITCH
+from agent.skills import skill_manager
+
+
+def _build_skill_hints() -> str:
+    """从已注册 Skill 的 YAML frontmatter（metadata）提取轻量提示，注入 Planner prompt。
+    Worker 阶段再按需加载完整的 skill.md 正文（knowledge）。
+    """
+    skills = skill_manager.list_skills_metadata()
+    if not skills:
+        return ""
+    lines = ["[已注册技能，规划时优先使用对应 capability]"]
+    for m in skills:
+        name = m.get("name", "")
+        desc = m.get("description", "").replace("\n", " ").strip()
+        caps = "、".join(m.get("capabilities", []))
+        header = m.get("usage_header", "")
+        lines.append(f"- capability={name}: {desc}")
+        if caps:
+            lines.append(f"  能力: {caps}")
+        if header:
+            lines.append(f"  用法: {header}")
+    return "\n".join(lines)
 
 class PlannerState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -112,6 +134,11 @@ async def planner_node(state: PlannerState) -> PlannerState:
         return state
 
     user_input = getattr(latest_msg, "content", str(latest_msg))
+
+    # 渐进式：Planner 只注入 YAML metadata（轻量），Worker 阶段再加载完整 knowledge
+    skill_hints = _build_skill_hints()
+    prompt = PLANNER_PROMPT + (f"\n\n{skill_hints}" if skill_hints else "")
+
     planner_llm = llm.with_structured_output(Planner, include_raw=True)
     response: Dict[str, Any] = {}
     parsed: Planner | None = None
@@ -120,7 +147,7 @@ async def planner_node(state: PlannerState) -> PlannerState:
         try:
             response = await planner_llm.ainvoke(
                 [
-                    SystemMessage(content=PLANNER_PROMPT),
+                    SystemMessage(content=prompt),
                     HumanMessage(content=user_input),
                 ]
             )

@@ -4,7 +4,7 @@
 本项目是一个具备长期与短期记忆、多代理协作处理能力、本地工具集成及检索增强生成功能的**PgoAgent**的智能体系统(基于**Langgraph + Chromadb + Agentic Rag + MCP**系统)。它采用**vllm**本地部署的大语言模型(**LLM**)并使用**PostgreSQL**存储用户数据，后端则通过**gRPC**、**GORM**及**Gin**框架协调代理**Agent服务端**的输出。
 
 
-**版本**: v0.0.3  
+**版本**: v0.0.4 
 **作者**: Soul-XuYang 
 **许可证**: MIT 
 
@@ -12,7 +12,7 @@
 
 This is an intelligent agent system named **PgoAgent**, featuring long-term and short-term memory, multi-agent collaboration capabilities, local tool integration, and retrieval-augmented generation functions (based on **Langgraph** + **Chromadb ** + **Agentic Rag + MCP**). It employs a locally deployed large language model(**LLM**) using **vllm** and stores user data with **PostgreSQL**, while the backend coordinates agent outputs via **gRPC**, **GORM**, and **Gin** framework.
 
-**version**: v0.0.3
+**version**: v0.0.4
 **author**: Soul-XuYang
 **license**: MIT
 
@@ -22,10 +22,11 @@ This is an intelligent agent system named **PgoAgent**, featuring long-term and 
 - **python3.12+**: 开发环境基础，使用类型注解(typing)与Pydantic进行类型定义和验证,使用logguru进行日志管理。
 - **asyncio**: 基于异步事件循环，实现 I/O 密集型任务的并发执行与工具调用调度。
 - **Langgraph**: 本次项目使用**langgraph**框架作为agent的运行框架，构建相应的工作流图和工作节点，同时兼容MCP工具和本地编写的基本工具
-- **多Agent** :实际将多个功能分为多个子图进行处理
-    1. 智能判断是否需要调用工具将复杂任务分解为可执行的步骤序列
-    2. 管理用户长期记忆和上下文信息
-    3. 执行文件操作、代码执行、RAG 检索等任务
+- **父子图协作 (Orchestration)**: 采用 **Supervisor (主管)** 模式，将复杂任务解耦为多个独立子图，由中心调度器动态分发任务：
+    1. ** Decision决策调度器 (Supervisor)**: 智能识别用户意图，将任务路由至合适的子 Agent（如 Planner 或 Chat）。
+    2. **规划 Agent (Planner)**: 针对复杂工程任务生成原子化的执行步骤序列。
+    3. **执行 Agent (Worker)**: 负责具体的工具调用（文件操作、代码执行、RAG 检索等）。
+    4. **记忆 Agent (Memory)**: 管理用户长期画像与上下文关联。
 - **Agentic RAG**: 本项目使用Agentic RAG(Retrieval Augmented Generation)并采用双阈值+混合检索(向量检索 + BM25 关键词检索)+ Rerank的方式进行检索，可进行召回与重排(内置循环次数，限制其推理深度)。
 - **MCP**: 可集成MCP工具，支持 MCP 协议的工具接入与扩展。
 - **Finetunning**: 大模型微调模块，可进行模型微调，并保存模型参数。
@@ -109,7 +110,7 @@ PgoAgent/
 │  │  │   Node     │  │    Node    │  │    Node    │         │   │
 │  │  └────────────┘  └────────────┘  └────────────┘         │   │
 │  │  ┌────────────┐  ┌────────────┐  ┌────────────┐         │   │
-│  │  │ MemoryNode │  │  AgentNode │  |  ChatNode  │         │   │
+│  │  │ MemoryNode │  │  WorkerNode │  |  ChatNode  │         │   │
 │  │  └────────────┘  └────────────┘  └────────────┘         │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
@@ -130,13 +131,54 @@ PgoAgent/
 </div>
 
 ### Agent整体的架构 - Agent Architecture Diagram
-- **summarization_node**: 用户先前对话历史总结与裁剪，防止对话时的 token 溢出
-- **decision_node**: 决策子图，判断此次对话是否需要调用工具
-- **planner_node**: 计划子图，依据用户问题生成多步骤执行计划
-- **chat_node**: 直接对话节点，处理无需工具的对话
-- **agent_node**: 代理执行节点，执行具体计划步骤
-- **tool_node**: 工具执行节点，调用具体工具
-- **long_memory_node**: 长期记忆子图，依据用户问题和回答管理用户画像
+- **summarization_node**: 对话历史总结与裁剪，优化上下文窗口
+- **decision_node (Supervisor)**: 调度核心，判断意图并分发至 `planner` (复杂任务) 或 `chat` (日常交流)
+- **planner_node**: 计划子图，将复杂请求拆解为可执行的原子步骤序列
+- **chat_node**: 零工具对话节点，结合长短期记忆提供直接回答
+- **worker_node (Worker)**: 具体的执行节点，负责规划步骤的思考与工具绑定
+- **tool_node**: 原子工具执行层，支持敏感操作的人工确认中断（`interrupt()`）
+- **long_memory_node**: 记忆管理子图，动态维护用户画像与偏好记录
+**补充**:这里对于重要的Worker节点做了超时保护机制，防止LLM长时间无响应导致请求挂起。
+
+#### 自定义的类 **Skill** 技能系统
+本项目初步构建了两个skill，将原先的shell_exec工具和rag_retrieve工具分别封装为TerminalSkill和RAGSkill，后续可以根据需要自定义更多的skill，只需要继承BaseSkill类，并实现load_resources方法即可,利于后续拓展使用。
+
+
+在进入Worker节点前，其Planner节点会规划步骤，它会读取skill的yaml格式的元数据(初始化记载到内存里)以达到渐进式披露信息的目的。
+
+Worker 节点在执行每个计划步骤前，根据 `capability` 标签匹配对应的 `Skill`。匹配成功后才加载该 Skill 的工具集与领域知识（**Lazy Loading**），未被命中的 Skill 在整个运行周期内不会加载任何资源，从而降低启动开销。
+
+```
+planner_node 输出 capability 标签
+        ↓
+worker_node 调用 get_skill(capability)
+        ↓
+SkillManager 首次命中时执行 load_resources()   ← lazy loading
+        ↓
+返回 skill.tools + skill.knowledge 注入当前步骤
+```
+
+目前内置两个 Skill：
+
+| Skill | capability | 工具 | 说明 |
+|-------|-----------|------|------|
+| `RAGSkill` | `rag_retrieve` | `rag_retrieve`, `rag_rewrite_query` | 知识库检索与查询重写 |
+| `TerminalSkill` | `code_exec` | `shell_exec` | Shell 命令执行与系统交互 |
+
+新增 Skill 只需继承 `BaseSkill`，实现 `load_resources()` 并在 `__init__.py` 注册即可。
+
+#### 超时保护机制
+
+为避免 LLM 服务或工具调用长时间无响应导致请求挂起，系统在以下节点设置了超时保护（基于 `asyncio.timeout()`）：
+
+| 位置 | 超时阈值 | 超时后行为 |
+|------|---------|-----------|
+| 工具执行 `_invoke_tool` | 30 秒 | 返回超时错误 `ToolMessage`，Worker 继续处理 |
+| `worker_node` LLM 调用 | 60 秒 | `step_status` 置为 `plan_done`，直接进入总结 |
+| `chat_node` LLM 调用 | 60 秒 | 返回"响应超时"提示给用户 |
+| `answer_thinking_node` LLM 调用 | 60 秒 | 返回"生成回答超时"提示给用户 |
+
+超时常量定义在 `graph.py` 顶部（`LLM_TIMEOUT` / `TOOL_TIMEOUT`），可按需调整。
 
 Agent工作流程可见本文项目的workflow图：
 <div align="center">
@@ -148,23 +190,19 @@ Agent工作流程可见本文项目的workflow图：
 #### Agent工作流程伪代码
 
 ```text
-用户输入 → summarization_node(总结裁剪) → decision_node(是否需要工具)
+用户输入 → summarization_node(预处理) → decision_node(Supervisor 调度)
     ↓
-    ├─ 不需要工具 → chat_node(直接对话) → long_memory_node(更新记忆)
+    ├─ next_worker="chat"    → chat_node(对话) → memory_sync
     │
-    └─ 需要工具 → planner_node(生成计划) → agent_node(执行步骤)
-                           ↓                    ↓
-                      tool_node(调用工具) ←─────┘
-                           ↓
-                    判断是否完成 → 未完成 → 继续下一步
-                           ↓
-                      已完成 → long_memory_node(更新记忆)
+    └─ next_worker="planner" → planner_node(规划) → worker_node(Worker 执行)
+                                                     ↓
+                                             tool_node(原子工具)
 ```
 
 #### 流程说明
 1. 开始对话，首先进入summary节点，对于用户之前的记忆进行裁剪和总结，其次对于用户的输入并结合上下文信息判断此次对话是否调用工具，
 2. 如果调用工具则进入plan节点，如果未调用工具则进入chat节点，其中chat节点会结合用户的长短期记忆力，对用户的问题进行回答。
-3. 如果调用工具，则进入plan节点，开始规划此次对话总共需要哪些步骤，构建相应的计划列表并详细描述每一步的计划步骤可能需要的工具，后续进入agent节点，开始执行思考每一步的步骤和工具，如果需要工具则进入tool节点，开始执行工具，并返回结果给agent节点，agent节点根据结果判断是否需要继续执行下一步，如果继续则进入plan节点，重复上述步骤，直到所有步骤执行完毕。
+3. 如果调用工具，则进入plan节点，开始规划此次对话总共需要哪些步骤，构建相应的计划列表并详细描述每一步的计划步骤可能需要的工具，后续进入worker节点，开始执行思考每一步的步骤和工具，如果需要工具则进入tool节点，开始执行工具，并返回结果给worker节点，worker节点根据结果判断是否需要继续执行下一步，如果继续则进入plan节点，重复上述步骤，直到所有步骤执行完毕。
 4. 上述的2和3步骤最后都统一进入到long_memory节点，程序初次判断是否需要长期存储用户的画像，后则大模型继续判断并补充和完善画像，最后将用户的个人画像返回到数据库中。
 #### 召回率的测试比较实验
 为了提高rag的检索效率，这里引出机器学习其中关于召回率和精确率的概念:

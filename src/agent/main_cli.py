@@ -2,6 +2,7 @@ import asyncio
 import sys
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.errors import GraphInterrupt
 from psycopg import AsyncConnection
 from langchain_core.messages import HumanMessage
 from langgraph.store.postgres import AsyncPostgresStore
@@ -47,7 +48,7 @@ def node_output(node: str) -> str:
         "decision_node": "Pgo大模型正在决策...",
         "tools_node": "Pgo大模型正在使用工具...",
         "summary_node": "Pgo大模型正在总结当前内容...",
-        "agent_node": "Pgo大模型正在执行相应计划步骤...",
+        "worker_node": "Pgo大模型正在执行相应计划步骤...",
     }
     return node_dict.get(node, "Pgo大模型正在思考中...")
 
@@ -179,6 +180,24 @@ class AgentRunner:
                 f"AgentRunner.chat() 准备返回: reply_length={len(final_msg.content)}, token={final_token}")
             return final_msg.content, final_token
 
+        except GraphInterrupt as gi:
+            # LangGraph interrupt() 触发：需要人工审核敏感工具
+            interrupt_value = gi.args[0] if gi.args else "需要人工确认"
+            print(f"\n⚠️  [中断] {interrupt_value}")
+            human_answer = input("请输入审核结果（y 批准 / n 拒绝，可附理由，如 'n 涉及敏感路径'）> ").strip()
+            if not human_answer:
+                human_answer = "n"
+            # 将审核结果以 resume 形式重新提交
+            resume_config = user_config
+            result = await self._graph.ainvoke(
+                {"messages": [], "context": {}},
+                config=resume_config,
+                command={"resume": {"answer": human_answer}},
+            )
+            final_msg = result["messages"][-1]
+            final_token = result.get("usages", {}).get("total", 0)
+            return final_msg.content, final_token
+
         except Exception as e:
             logger.error(f"AgentRunner.chat() 发生异常: {e}", exc_info=True)
             raise
@@ -217,6 +236,21 @@ class AgentRunner:
                         token=total_token,
                         node_name=""
                     )
+                    return
+
+                # 处理 interrupt 中断事件（敏感工具审核）
+                if "__interrupt__" in chunk:
+                    interrupt_info = chunk["__interrupt__"]
+                    interrupt_value = interrupt_info[0].value if interrupt_info else "需要人工确认"
+                    yield StreamOutput(
+                        output=f"\n⚠️  [中断] {interrupt_value}",
+                        final_response=False,
+                        node_name="__interrupt__",
+                        token=0
+                    )
+                    # 在流式场景中无法阻塞等待 input()，此处 yield 提示后结束本次流
+                    # 调用方（CLI / gRPC）应在收到 __interrupt__ 事件后，
+                    # 获取用户审核结果并调用 graph.ainvoke(..., command={"resume": ...}) 继续
                     return
 
                 for node, output in chunk.items():
@@ -283,7 +317,6 @@ async def test_db_connection(dsn: str, timeout: int = 10) -> bool:
         logger.info(f"正在测试数据库连接...")
         # 给一个异步协程设置超时时间
         conn = await asyncio.wait_for(AsyncConnection.connect(dsn), timeout=timeout)
-        await conn.close()
         await conn.close()
         logger.info("当前数据库连接成功!")
         return True

@@ -50,8 +50,8 @@ def summarization_node(state: State, max_tokens=2048, max_summary_tokens=1024, t
     state["messages"] = [summary_msg] + tail   # 保留摘要 + 最近topK条
     return state
 
-# -------- Agent Node --------
-def agent_node(state: State) -> State:
+# -------- Worker Node --------
+def worker_node(state: State) -> State:
     max_input_tokens = input_limit
     msgs = state["messages"]
     summary = state["context"].get("summary")
@@ -80,11 +80,11 @@ def agent_node(state: State) -> State:
 def create_graph(checkpointer=None):
     workflow = StateGraph(State) # 初始化
     workflow.add_node("summarize", summarization_node)
-    workflow.add_node("agent", agent_node)
+    workflow.add_node("worker", worker_node)
     workflow.set_entry_point("summarize") # 设置入口点
 
-    workflow.add_edge("summarize", "agent")
-    workflow.add_edge("agent", END)
+    workflow.add_edge("summarize", "worker")
+    workflow.add_edge("worker", END)
     return workflow.compile(checkpointer=checkpointer) if checkpointer else workflow.compile()
 
 
